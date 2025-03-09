@@ -101,6 +101,10 @@ The server exposes several tools through the MCP protocol:
   - Parameters: `calendarId`, plus optional filters like `startDateGte`, `startDateLte`, `attendeeEmail`, etc.
   - Returns detailed event listings with rich information
 
+- `listEventsWithCredentials`: Lists calendar events with credentials provided directly in the query
+  - Parameters: `calendarId`, `apiKey`, plus same optional filters as `listEvents`
+  - Returns the same detailed information as `listEvents` but with direct authentication
+
 - `getEvent`: Gets detailed information about a specific calendar event
   - Parameters: `eventId` (UUID of the event)
   - Returns comprehensive event details including attendees and recording status
@@ -109,8 +113,16 @@ The server exposes several tools through the MCP protocol:
   - Parameters: `eventId`, `botName`, plus optional settings like `botImage`, `recordingMode`, etc.
   - Returns confirmation of successful scheduling
 
+- `scheduleRecordingWithCredentials`: Schedules recording with credentials provided directly in the query
+  - Parameters: `eventId`, `apiKey`, `botName`, plus same optional settings as `scheduleRecording`
+  - Returns confirmation of successful scheduling
+
 - `cancelRecording`: Cancels a previously scheduled recording
   - Parameters: `eventId`, `allOccurrences` (optional, for recurring events)
+  - Returns confirmation of successful cancellation
+
+- `cancelRecordingWithCredentials`: Cancels recording with credentials provided directly in the query
+  - Parameters: `eventId`, `apiKey`, `allOccurrences` (optional)
   - Returns confirmation of successful cancellation
 
 - `checkCalendarIntegration`: Checks and diagnoses calendar integration status
@@ -342,6 +354,28 @@ This approach eliminates the need to manually call the OAuth setup tools, making
    "Show me the parts where we talked about customer requirements"
    ```
 
+### Using Direct Credential Tools
+
+You can provide API credentials directly in your queries:
+
+1. List events with direct credentials:
+
+   ```
+   "List events from calendar 5c99f8a4-f498-40d0-88f0-29f698c53c51 using API key tesban where attendee is philipe@spoke.app"
+   ```
+
+2. Schedule a recording with direct credentials:
+
+   ```
+   "Schedule a recording for event 78d06b42-794f-4efe-8195-62db1f0052d5 using API key tesban with bot name 'Weekly Meeting Bot'"
+   ```
+
+3. Cancel a recording with direct credentials:
+
+   ```
+   "Cancel the recording for event 97cd62f0-ea9b-42b3-add5-7a607ce6d80f using API key tesban"
+   ```
+
 ## Configuration
 
 The server can be configured through environment variables or by editing the `src/config.ts` file.
@@ -497,6 +531,20 @@ npm run inspect
 npm run dev
 ```
 
+### Log Management
+
+The server includes optimized logging with:
+
+```bash
+npm run cleanup
+```
+
+This command:
+- Cleans up unnecessary log files and cached data
+- Filters out repetitive ping messages from logs
+- Reduces disk usage while preserving important log information
+- Maintains a smaller log footprint for long-running servers
+
 ## Project Structure
 
 - `src/index.ts`: Main entry point
@@ -505,10 +553,38 @@ npm run dev
 - `src/api/`: API client for the Meeting BaaS backend
 - `src/types/`: TypeScript type definitions
 - `src/config.ts`: Server configuration
+- `src/utils/`: Utility functions
+  - `logging.ts`: Log filtering and management
+  - `tinyDb.ts`: Persistent bot tracking database
 
 ## Authentication
 
 The server expects an API key in the `x-api-key` header for authentication. You can configure the default API key in the configuration.
+
+Direct authentication is also supported in many tools (named with "WithCredentials") where you can provide the API key directly as a parameter rather than in headers.
+
+## Advanced Features
+
+### Persistent Bot Tracking
+
+The server maintains a persistent database of recently used bots, which enables:
+
+- Contextual follow-up queries about meetings without needing to specify the bot ID
+- Improved topic matching across multiple meetings
+- Automatic knowledge of meeting participants, topics, and context
+- Enhanced intelligent search capabilities
+
+This tracking is completely transparent to users and dramatically improves the experience when having conversations about meetings over time.
+
+### Intelligent Adaptive Search
+
+The intelligent search capability adapts to available information:
+
+- Can search by explicit bot ID when known
+- Searches by meeting type, participants, or keywords when exact bot ID isn't known
+- Automatically uses calendar data when available
+- Remembers previous meeting context for follow-up questions
+- Provides rich, AI-friendly results with full context
 
 ## License
 
