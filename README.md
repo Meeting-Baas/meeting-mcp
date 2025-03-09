@@ -65,8 +65,57 @@ The server exposes several tools through the MCP protocol:
 
 ### Calendar Tools
 
-- `listCalendars`: Lists all available calendars
-- `getCalendarEvents`: Gets events from a specified calendar
+- `oauthGuidance`: Get detailed step-by-step instructions on setting up OAuth for Google or Microsoft calendars
+  - No parameters required
+  - Returns comprehensive instructions for obtaining OAuth credentials and setting up calendar integration
+
+- `listRawCalendars`: Lists available calendars from Google or Microsoft before integration
+  - Parameters: `platform` ("Google" or "Microsoft"), `clientId`, `clientSecret`, `refreshToken`
+  - Returns a list of available calendars with their IDs and primary status
+
+- `setupCalendarOAuth`: Integrates a calendar using OAuth credentials
+  - Parameters: `platform` ("Google" or "Microsoft"), `clientId`, `clientSecret`, `refreshToken`, `rawCalendarId` (optional)
+  - Returns confirmation of successful integration with calendar details
+
+- `listCalendars`: Lists all integrated calendars
+  - No parameters required
+  - Returns a list of all calendars with their names, email addresses, and UUIDs
+
+- `getCalendar`: Gets detailed information about a specific calendar integration
+  - Parameters: `calendarId` (UUID of the calendar)
+  - Returns comprehensive calendar details
+
+- `deleteCalendar`: Permanently removes a calendar integration
+  - Parameters: `calendarId` (UUID of the calendar)
+  - Returns confirmation of successful deletion
+
+- `resyncAllCalendars`: Forces a refresh of all connected calendars
+  - No parameters required
+  - Returns the status of the sync operation
+
+- `listUpcomingMeetings`: Lists upcoming meetings from a calendar
+  - Parameters: `calendarId`, `status` (optional: "upcoming", "past", "all"), `limit` (optional)
+  - Returns a list of meetings with their names, times, and recording status
+
+- `listEvents`: Lists calendar events with comprehensive filtering options
+  - Parameters: `calendarId`, plus optional filters like `startDateGte`, `startDateLte`, `attendeeEmail`, etc.
+  - Returns detailed event listings with rich information
+
+- `getEvent`: Gets detailed information about a specific calendar event
+  - Parameters: `eventId` (UUID of the event)
+  - Returns comprehensive event details including attendees and recording status
+
+- `scheduleRecording`: Schedules a bot to record an upcoming meeting
+  - Parameters: `eventId`, `botName`, plus optional settings like `botImage`, `recordingMode`, etc.
+  - Returns confirmation of successful scheduling
+
+- `cancelRecording`: Cancels a previously scheduled recording
+  - Parameters: `eventId`, `allOccurrences` (optional, for recurring events)
+  - Returns confirmation of successful cancellation
+
+- `checkCalendarIntegration`: Checks and diagnoses calendar integration status
+  - No parameters required
+  - Returns a comprehensive status report and troubleshooting tips
 
 ### Meeting Tools
 
@@ -138,6 +187,68 @@ The server exposes several tools through the MCP protocol:
 3. Check recording status:
    ```
    "What's the status of my meeting recording for the Zoom call I started earlier?"
+   ```
+
+### Calendar Integration and Automatic Recording
+
+1. Get guidance on obtaining OAuth credentials:
+
+   ```
+   "I want to integrate my Google Calendar. How do I get OAuth credentials?"
+   ```
+
+2. List your available calendars before integration:
+
+   ```
+   "List my available Google calendars. Here are my OAuth credentials:
+   - Client ID: my-client-id-123456789.apps.googleusercontent.com
+   - Client Secret: my-client-secret-ABCDEF123456
+   - Refresh Token: my-refresh-token-ABCDEF123456789"
+   ```
+
+3. Set up calendar integration with a specific calendar:
+
+   ```
+   "Integrate my Google Calendar using these credentials:
+   - Platform: Google
+   - Client ID: my-client-id-123456789.apps.googleusercontent.com
+   - Client Secret: my-client-secret-ABCDEF123456
+   - Refresh Token: my-refresh-token-ABCDEF123456789
+   - Raw Calendar ID: primary@gmail.com"
+   ```
+
+4. View your upcoming meetings:
+
+   ```
+   "Show me my upcoming meetings from calendar 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+   ```
+
+5. Schedule recording for an upcoming meeting:
+
+   ```
+   "Schedule a recording for my team meeting with event ID 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d.
+   Configure the bot with:
+   - Name: Team Meeting Bot
+   - Recording Mode: gallery_view
+   - Entry Message: Hello everyone, I'm here to record the meeting"
+   ```
+
+6. Check all recordings scheduled in your calendar:
+
+   ```
+   "Show me all meetings in my calendar that have recordings scheduled"
+   ```
+
+7. Cancel a previously scheduled recording:
+
+   ```
+   "Cancel the recording for event 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d"
+   ```
+
+8. Refresh calendar data if meetings are missing:
+
+   ```
+   "Force a resync of all my connected calendars"
    ```
 
 ### Analyzing Meeting Content

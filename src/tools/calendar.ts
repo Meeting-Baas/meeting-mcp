@@ -1,5 +1,9 @@
 /**
  * MCP tools for calendar integration
+ * 
+ * This module provides a comprehensive set of tools for integrating with 
+ * Google and Microsoft calendars through the Meeting BaaS API. It includes
+ * tools for OAuth setup, calendar management, event management, and recording scheduling.
  */
 
 import type { Context, TextContent } from "fastmcp";
@@ -13,16 +17,84 @@ type SessionAuth = { apiKey: string };
 // Define parameter schemas
 const emptyParams = z.object({});
 
+// Schema for OAuth setup and raw calendar listing
+const oauthSetupParams = z.object({
+  platform: z.enum(["Google", "Microsoft"])
+    .describe("The calendar provider platform (Google or Microsoft)"),
+  clientId: z.string()
+    .describe("OAuth client ID obtained from Google Cloud Console or Microsoft Azure portal"),
+  clientSecret: z.string()
+    .describe("OAuth client secret obtained from Google Cloud Console or Microsoft Azure portal"),
+  refreshToken: z.string()
+    .describe("OAuth refresh token obtained after user grants calendar access"),
+  rawCalendarId: z.string().optional()
+    .describe("Optional ID of specific calendar to integrate (from listRawCalendars). If not provided, the primary calendar is used"),
+});
+
+const calendarIdParams = z.object({
+  calendarId: z.string().uuid()
+    .describe("UUID of the calendar to query"),
+});
+
 const upcomingMeetingsParams = z.object({
-  calendarId: z.string().uuid().describe("UUID of the calendar to query"),
+  calendarId: z.string().uuid()
+    .describe("UUID of the calendar to query"),
+  status: z.enum(["upcoming", "past", "all"]).optional().default("upcoming")
+    .describe("Filter for meeting status: 'upcoming' (default), 'past', or 'all'"),
+  limit: z.number().int().min(1).max(100).optional().default(20)
+    .describe("Maximum number of events to return"),
+});
+
+const listEventsParams = z.object({
+  calendarId: z.string().uuid()
+    .describe("UUID of the calendar to query"),
+  status: z.enum(["upcoming", "past", "all"]).optional().default("upcoming")
+    .describe("Filter for meeting status: 'upcoming' (default), 'past', or 'all'"),
+  startDateGte: z.string().optional()
+    .describe("Filter events with start date ≥ this ISO-8601 timestamp (e.g., '2023-01-01T00:00:00Z')"),
+  startDateLte: z.string().optional()
+    .describe("Filter events with start date ≤ this ISO-8601 timestamp (e.g., '2023-12-31T23:59:59Z')"),
+  attendeeEmail: z.string().email().optional()
+    .describe("Filter events including this attendee email"),
+  organizerEmail: z.string().email().optional()
+    .describe("Filter events with this organizer email"),
+  updatedAtGte: z.string().optional()
+    .describe("Filter events updated at or after this ISO-8601 timestamp"),
+  cursor: z.string().optional()
+    .describe("Pagination cursor from previous response"),
+});
+
+const eventIdParams = z.object({
+  eventId: z.string().uuid()
+    .describe("UUID of the calendar event to query"),
 });
 
 const scheduleRecordingParams = z.object({
-  eventId: z.string().uuid().describe("UUID of the calendar event to record"),
-  botName: z.string().describe("Name to display for the bot in the meeting"),
-  recordingMode: z
-    .enum(["speaker_view", "gallery_view", "audio_only"] as const)
-    .default("speaker_view"),
+  eventId: z.string().uuid()
+    .describe("UUID of the calendar event to record"),
+  botName: z.string()
+    .describe("Name to display for the bot in the meeting"),
+  botImage: z.string().url().optional()
+    .describe("URL to an image for the bot's avatar (optional)"),
+  entryMessage: z.string().optional()
+    .describe("Message the bot will send when joining the meeting (optional)"),
+  recordingMode: z.enum(["speaker_view", "gallery_view", "audio_only"] as const).default("speaker_view")
+    .describe("Recording mode: 'speaker_view' (default), 'gallery_view', or 'audio_only'"),
+  speechToTextProvider: z.enum(["Gladia", "Runpod", "Default"] as const).optional()
+    .describe("Provider for speech-to-text transcription (optional)"),
+  speechToTextApiKey: z.string().optional()
+    .describe("API key for the speech-to-text provider if required (optional)"),
+  extra: z.record(z.any()).optional()
+    .describe("Additional metadata about the meeting (e.g., meetingType, participants)"),
+  allOccurrences: z.boolean().optional().default(false)
+    .describe("For recurring events, schedule recording for all occurrences (true) or just this instance (false)"),
+});
+
+const cancelRecordingParams = z.object({
+  eventId: z.string().uuid()
+    .describe("UUID of the calendar event to cancel recording for"),
+  allOccurrences: z.boolean().optional().default(false)
+    .describe("For recurring events, cancel recording for all occurrences (true) or just this instance (false)"),
 });
 
 // Tool type with correct typing
@@ -41,7 +113,7 @@ type Tool<P extends z.ZodType<any, any>> = {
  */
 export const listCalendarsTool: Tool<typeof emptyParams> = {
   name: "listCalendars",
-  description: "List available calendars",
+  description: "List all calendars integrated with Meeting BaaS",
   parameters: emptyParams,
   execute: async (_args, context) => {
     const { session, log } = context;
@@ -50,7 +122,7 @@ export const listCalendarsTool: Tool<typeof emptyParams> = {
     const response = await apiRequest(session, "get", "/calendars/");
 
     if (response.length === 0) {
-      return "No calendars found. You can add a calendar using the addCalendar tool.";
+      return "No calendars found. You can add a calendar using the setupCalendarOAuth tool.";
     }
 
     const calendarList = response
@@ -58,6 +130,186 @@ export const listCalendarsTool: Tool<typeof emptyParams> = {
       .join("\n");
 
     return `Found ${response.length} calendars:\n\n${calendarList}`;
+  },
+};
+
+/**
+ * Get calendar details
+ */
+export const getCalendarTool: Tool<typeof calendarIdParams> = {
+  name: "getCalendar",
+  description: "Get detailed information about a specific calendar integration",
+  parameters: calendarIdParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    log.info("Getting calendar details", { calendarId: args.calendarId });
+
+    const response = await apiRequest(
+      session,
+      "get",
+      `/calendars/${args.calendarId}`
+    );
+
+    return `Calendar Details:
+Name: ${response.name}
+Email: ${response.email}
+Platform ID: ${response.google_id || response.microsoft_id}
+UUID: ${response.uuid}
+${response.resource_id ? `Resource ID: ${response.resource_id}` : ''}`;
+  },
+};
+
+/**
+ * List raw calendars (before integration)
+ */
+export const listRawCalendarsTool: Tool<typeof oauthSetupParams> = {
+  name: "listRawCalendars",
+  description: "List available calendars from Google or Microsoft before integration",
+  parameters: oauthSetupParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    log.info("Listing raw calendars", { platform: args.platform });
+
+    const payload = {
+      oauth_client_id: args.clientId,
+      oauth_client_secret: args.clientSecret,
+      oauth_refresh_token: args.refreshToken,
+      platform: args.platform
+    };
+
+    try {
+      const response = await apiRequest(
+        session,
+        "post",
+        "/calendars/raw",
+        payload
+      );
+
+      if (!response.calendars || response.calendars.length === 0) {
+        return "No calendars found. Please check your OAuth credentials.";
+      }
+
+      const calendarList = response.calendars
+        .map((cal: any) => {
+          const isPrimary = cal.is_primary ? " (Primary)" : "";
+          return `- ${cal.email}${isPrimary} [ID: ${cal.id}]`;
+        })
+        .join("\n");
+
+      return `Found ${response.calendars.length} raw calendars. You can use the setupCalendarOAuth tool to integrate any of these:\n\n${calendarList}\n\nGuidance: Copy the ID of the calendar you want to integrate and use it as the rawCalendarId parameter in setupCalendarOAuth.`;
+    } catch (error) {
+      return `Error listing raw calendars: ${error instanceof Error ? error.message : String(error)}\n\nGuidance for obtaining OAuth credentials:\n\n1. For Google:\n   - Go to Google Cloud Console (https://console.cloud.google.com)\n   - Create a project and enable the Google Calendar API\n   - Create OAuth 2.0 credentials (client ID and secret)\n   - Set up consent screen with calendar scopes\n   - Use OAuth playground (https://developers.google.com/oauthplayground) to get a refresh token\n\n2. For Microsoft:\n   - Go to Azure Portal (https://portal.azure.com)\n   - Register an app in Azure AD\n   - Add Microsoft Graph API permissions for calendars\n   - Create a client secret\n   - Use a tool like Postman to get a refresh token`;
+    }
+  },
+};
+
+/**
+ * Setup calendar OAuth integration
+ */
+export const setupCalendarOAuthTool: Tool<typeof oauthSetupParams> = {
+  name: "setupCalendarOAuth",
+  description: "Integrate a calendar using OAuth credentials",
+  parameters: oauthSetupParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    log.info("Setting up calendar OAuth", { platform: args.platform });
+
+    const payload: {
+      oauth_client_id: string;
+      oauth_client_secret: string;
+      oauth_refresh_token: string;
+      platform: "Google" | "Microsoft";
+      raw_calendar_id?: string;
+    } = {
+      oauth_client_id: args.clientId,
+      oauth_client_secret: args.clientSecret,
+      oauth_refresh_token: args.refreshToken,
+      platform: args.platform
+    };
+
+    if (args.rawCalendarId) {
+      payload.raw_calendar_id = args.rawCalendarId;
+    }
+
+    try {
+      const response = await apiRequest(
+        session,
+        "post",
+        "/calendars/",
+        payload
+      );
+
+      return `Calendar successfully integrated!\n\nDetails:
+Name: ${response.calendar.name}
+Email: ${response.calendar.email}
+UUID: ${response.calendar.uuid}
+
+You can now use this UUID to list events or schedule recordings.`;
+    } catch (error) {
+      return `Error setting up calendar: ${error instanceof Error ? error.message : String(error)}\n\nPlease verify your OAuth credentials. Here's how to obtain them:\n\n1. For Google Calendar:\n   - Visit https://console.cloud.google.com\n   - Create a project and enable Google Calendar API\n   - Configure OAuth consent screen\n   - Create OAuth client ID and secret\n   - Use OAuth playground to get refresh token\n\n2. For Microsoft Calendar:\n   - Visit https://portal.azure.com\n   - Register an application\n   - Add Microsoft Graph calendar permissions\n   - Create client secret\n   - Complete OAuth flow to get refresh token`;
+    }
+  },
+};
+
+/**
+ * Delete calendar integration
+ */
+export const deleteCalendarTool: Tool<typeof calendarIdParams> = {
+  name: "deleteCalendar",
+  description: "Permanently remove a calendar integration",
+  parameters: calendarIdParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    log.info("Deleting calendar", { calendarId: args.calendarId });
+
+    try {
+      await apiRequest(
+        session,
+        "delete",
+        `/calendars/${args.calendarId}`
+      );
+
+      return "Calendar integration has been successfully removed. All associated events and scheduled recordings have been deleted.";
+    } catch (error) {
+      return `Error deleting calendar: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};
+
+/**
+ * Force resync of all calendars
+ */
+export const resyncAllCalendarsTool: Tool<typeof emptyParams> = {
+  name: "resyncAllCalendars",
+  description: "Force a resync of all connected calendars",
+  parameters: emptyParams,
+  execute: async (_args, context) => {
+    const { session, log } = context;
+    log.info("Resyncing all calendars");
+
+    try {
+      const response = await apiRequest(
+        session,
+        "post",
+        "/calendars/resync_all"
+      );
+
+      const syncedCount = response.synced_calendars?.length || 0;
+      const errorCount = response.errors?.length || 0;
+
+      let result = `Calendar sync operation completed.\n\n${syncedCount} calendars synced successfully.`;
+
+      if (errorCount > 0) {
+        result += `\n\n${errorCount} calendars failed to sync:`;
+        response.errors.forEach((error: any) => {
+          result += `\n- Calendar ${error[0]}: ${error[1]}`;
+        });
+      }
+
+      return result;
+    } catch (error) {
+      return `Error resyncing calendars: ${error instanceof Error ? error.message : String(error)}`;
+    }
   },
 };
 
@@ -70,44 +322,156 @@ export const listUpcomingMeetingsTool: Tool<typeof upcomingMeetingsParams> = {
   parameters: upcomingMeetingsParams,
   execute: async (args, context) => {
     const { session, log } = context;
-    log.info("Listing upcoming meetings", { calendarId: args.calendarId });
+    log.info("Listing upcoming meetings", { 
+      calendarId: args.calendarId,
+      status: args.status 
+    });
 
     const response = await apiRequest(
       session,
       "get",
-      `/calendar_events/?calendar_id=${args.calendarId}`
+      `/calendar_events/?calendar_id=${args.calendarId}&status=${args.status}`
     );
 
     if (!response.data || response.data.length === 0) {
-      return "No upcoming meetings found in this calendar.";
+      return `No ${args.status} meetings found in this calendar.`;
     }
 
-    const now = new Date();
-
-    const upcomingMeetings: CalendarEvent[] = response.data
-      .filter(
-        (event: CalendarEvent) =>
-          !event.deleted && new Date(event.start_time) > now
-      )
-      .sort(
-        (a: CalendarEvent, b: CalendarEvent) =>
-          new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-      );
-
-    if (upcomingMeetings.length === 0) {
-      return "No upcoming meetings found in this calendar.";
-    }
-
-    const meetingList = upcomingMeetings
+    const meetings = response.data.slice(0, args.limit);
+    
+    const meetingList = meetings
       .map((meeting: CalendarEvent) => {
         const startTime = new Date(meeting.start_time).toLocaleString();
         const hasBot = meeting.bot_param ? "🤖 Bot scheduled" : "";
+        const meetingLink = meeting.meeting_url ? `Link: ${meeting.meeting_url}` : "";
 
-        return `- ${meeting.name} [${startTime}] ${hasBot} [ID: ${meeting.uuid}]`;
+        return `- ${meeting.name} [${startTime}] ${hasBot} ${meetingLink} [ID: ${meeting.uuid}]`;
       })
       .join("\n");
 
-    return `Upcoming meetings:\n\n${meetingList}`;
+    let result = `${args.status.charAt(0).toUpperCase() + args.status.slice(1)} meetings:\n\n${meetingList}`;
+
+    if (response.next) {
+      result += `\n\nMore meetings available. Use 'cursor: ${response.next}' to see more.`;
+    }
+
+    return result;
+  },
+};
+
+/**
+ * List events with comprehensive filtering
+ */
+export const listEventsTool: Tool<typeof listEventsParams> = {
+  name: "listEvents",
+  description: "List calendar events with comprehensive filtering options",
+  parameters: listEventsParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    log.info("Listing calendar events", { 
+      calendarId: args.calendarId,
+      filters: args
+    });
+
+    // Build the query parameters
+    let queryParams = `calendar_id=${args.calendarId}`;
+    if (args.status) queryParams += `&status=${args.status}`;
+    if (args.startDateGte) queryParams += `&start_date_gte=${encodeURIComponent(args.startDateGte)}`;
+    if (args.startDateLte) queryParams += `&start_date_lte=${encodeURIComponent(args.startDateLte)}`;
+    if (args.attendeeEmail) queryParams += `&attendee_email=${encodeURIComponent(args.attendeeEmail)}`;
+    if (args.organizerEmail) queryParams += `&organizer_email=${encodeURIComponent(args.organizerEmail)}`;
+    if (args.updatedAtGte) queryParams += `&updated_at_gte=${encodeURIComponent(args.updatedAtGte)}`;
+    if (args.cursor) queryParams += `&cursor=${encodeURIComponent(args.cursor)}`;
+
+    try {
+      const response = await apiRequest(
+        session,
+        "get",
+        `/calendar_events/?${queryParams}`
+      );
+
+      if (!response.data || response.data.length === 0) {
+        return "No events found matching your criteria.";
+      }
+
+      const eventList = response.data
+        .map((event: CalendarEvent) => {
+          const startTime = new Date(event.start_time).toLocaleString();
+          const endTime = new Date(event.end_time).toLocaleString();
+          const hasBot = event.bot_param ? "🤖 Bot scheduled" : "";
+          const meetingLink = event.meeting_url ? `\n   Link: ${event.meeting_url}` : "";
+          const attendees = event.attendees && event.attendees.length > 0 
+            ? `\n   Attendees: ${event.attendees.map((a: {name?: string; email: string}) => a.name || a.email).join(', ')}` 
+            : "";
+
+          return `- ${event.name}\n   From: ${startTime}\n   To: ${endTime}${meetingLink}${attendees}\n   ${hasBot} [ID: ${event.uuid}]`;
+        })
+        .join("\n\n");
+
+      let result = `Events (${response.data.length}):\n\n${eventList}`;
+
+      if (response.next) {
+        result += `\n\nMore events available. Use cursor: "${response.next}" to see more.`;
+      }
+
+      return result;
+    } catch (error) {
+      return `Error listing events: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};
+
+/**
+ * Get event details
+ */
+export const getEventTool: Tool<typeof eventIdParams> = {
+  name: "getEvent",
+  description: "Get detailed information about a specific calendar event",
+  parameters: eventIdParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    log.info("Getting event details", { eventId: args.eventId });
+
+    try {
+      const event = await apiRequest(
+        session,
+        "get",
+        `/calendar_events/${args.eventId}`
+      );
+
+      const startTime = new Date(event.start_time).toLocaleString();
+      const endTime = new Date(event.end_time).toLocaleString();
+      
+      const attendees = event.attendees && event.attendees.length > 0
+        ? event.attendees.map((a: {name?: string; email: string}) => `   - ${a.name || 'Unnamed'} (${a.email})`).join('\n')
+        : "   None";
+        
+      let botDetails = "None";
+      if (event.bot_param) {
+        botDetails = `
+   Name: ${event.bot_param.bot_name}
+   Recording Mode: ${event.bot_param.recording_mode || 'speaker_view'}
+   Meeting Type: ${event.bot_param.extra?.meetingType || 'Not specified'}`;
+      }
+
+      return `Event Details:
+Title: ${event.name}
+Time: ${startTime} to ${endTime}
+Meeting URL: ${event.meeting_url || 'Not available'}
+Is Organizer: ${event.is_organizer ? 'Yes' : 'No'}
+Is Recurring: ${event.is_recurring ? 'Yes' : 'No'}
+${event.recurring_event_id ? `Recurring Event ID: ${event.recurring_event_id}` : ''}
+
+Attendees:
+${attendees}
+
+Bot Configuration:
+${botDetails}
+
+Event ID: ${event.uuid}`;
+    } catch (error) {
+      return `Error getting event details: ${error instanceof Error ? error.message : String(error)}`;
+    }
   },
 };
 
@@ -116,26 +480,280 @@ export const listUpcomingMeetingsTool: Tool<typeof upcomingMeetingsParams> = {
  */
 export const scheduleRecordingTool: Tool<typeof scheduleRecordingParams> = {
   name: "scheduleRecording",
-  description:
-    "Schedule a bot to record an upcoming meeting from your calendar",
+  description: "Schedule a bot to record an upcoming meeting from your calendar",
   parameters: scheduleRecordingParams,
   execute: async (args, context) => {
     const { session, log } = context;
-    log.info("Scheduling meeting recording", { eventId: args.eventId });
+    log.info("Scheduling meeting recording", { 
+      eventId: args.eventId,
+      botName: args.botName,
+      recordingMode: args.recordingMode,
+      allOccurrences: args.allOccurrences
+    });
 
-    const payload = {
+    const payload: any = {
       bot_name: args.botName,
-      recording_mode: args.recordingMode,
-      extra: {}, // Can be used to add custom data
+      extra: args.extra || {}
     };
 
-    await apiRequest(
-      session,
-      "post",
-      `/calendar_events/${args.eventId}/bot`,
-      payload
-    );
+    if (args.botImage) payload.bot_image = args.botImage;
+    if (args.entryMessage) payload.enter_message = args.entryMessage;
+    if (args.recordingMode) payload.recording_mode = args.recordingMode;
+    
+    if (args.speechToTextProvider) {
+      payload.speech_to_text = {
+        provider: args.speechToTextProvider
+      };
+      
+      if (args.speechToTextApiKey) {
+        payload.speech_to_text.api_key = args.speechToTextApiKey;
+      }
+    }
 
-    return "Recording has been scheduled successfully.";
+    try {
+      let url = `/calendar_events/${args.eventId}/bot`;
+      if (args.allOccurrences) {
+        url += `?all_occurrences=true`;
+      }
+
+      const response = await apiRequest(
+        session,
+        "post",
+        url,
+        payload
+      );
+
+      // Check if we got a successful response with event data
+      if (Array.isArray(response) && response.length > 0) {
+        const eventCount = response.length;
+        const firstEventName = response[0].name;
+        
+        if (eventCount === 1) {
+          return `Recording has been scheduled successfully for "${firstEventName}".`;
+        } else {
+          return `Recording has been scheduled successfully for ${eventCount} instances of "${firstEventName}".`;
+        }
+      }
+
+      return "Recording has been scheduled successfully.";
+    } catch (error) {
+      return `Error scheduling recording: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};
+
+/**
+ * Cancel a scheduled recording
+ */
+export const cancelRecordingTool: Tool<typeof cancelRecordingParams> = {
+  name: "cancelRecording",
+  description: "Cancel a previously scheduled recording",
+  parameters: cancelRecordingParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    log.info("Canceling recording", { 
+      eventId: args.eventId,
+      allOccurrences: args.allOccurrences
+    });
+
+    try {
+      let url = `/calendar_events/${args.eventId}/bot`;
+      if (args.allOccurrences) {
+        url += `?all_occurrences=true`;
+      }
+
+      const response = await apiRequest(
+        session,
+        "delete",
+        url
+      );
+
+      // Check if we got a successful response with event data
+      if (Array.isArray(response) && response.length > 0) {
+        const eventCount = response.length;
+        const firstEventName = response[0].name;
+        
+        if (eventCount === 1) {
+          return `Recording has been canceled successfully for "${firstEventName}".`;
+        } else {
+          return `Recording has been canceled successfully for ${eventCount} instances of "${firstEventName}".`;
+        }
+      }
+
+      return "Recording has been canceled successfully.";
+    } catch (error) {
+      return `Error canceling recording: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};
+
+/**
+ * Provides guidance on setting up OAuth for calendar integration
+ */
+export const oauthGuidanceTool: Tool<typeof emptyParams> = {
+  name: "oauthGuidance",
+  description: "Get detailed guidance on setting up OAuth for calendar integration",
+  parameters: emptyParams,
+  execute: async (_args, context) => {
+    const { log } = context;
+    log.info("Providing OAuth guidance");
+
+    return `# Calendar OAuth Integration Guide
+
+## Overview
+To integrate your Google or Microsoft calendars with Meeting BaaS, you need to set up OAuth. This process requires:
+
+1. Creating OAuth credentials (client ID and secret) in Google/Microsoft developer portals
+2. Obtaining a refresh token through the OAuth flow
+3. Using these credentials to connect your calendars
+
+## Google Calendar Integration
+
+### Step 1: Create a Google Cloud Project
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a new project or select an existing one
+3. Enable the Google Calendar API for your project
+
+### Step 2: Set Up OAuth Consent Screen
+1. Go to "OAuth consent screen" in the left sidebar
+2. Select user type (Internal or External)
+3. Fill in required app information
+4. Add scopes for Calendar API:
+   - \`https://www.googleapis.com/auth/calendar.readonly\`
+   - \`https://www.googleapis.com/auth/calendar.events.readonly\`
+
+### Step 3: Create OAuth Client ID
+1. Go to "Credentials" in the left sidebar
+2. Click "Create Credentials" > "OAuth client ID"
+3. Select "Web application" as application type
+4. Add authorized redirect URIs (including \`https://developers.google.com/oauthplayground\` for testing)
+5. Save your Client ID and Client Secret
+
+### Step 4: Get Refresh Token
+1. Go to [OAuth Playground](https://developers.google.com/oauthplayground)
+2. Click the gear icon (settings) and check "Use your own OAuth credentials"
+3. Enter your Client ID and Client Secret
+4. Select Calendar API scopes and authorize
+5. Exchange authorization code for tokens
+6. Save the refresh token
+
+## Microsoft Calendar Integration
+
+### Step 1: Register Application in Azure
+1. Go to [Azure Portal](https://portal.azure.com)
+2. Navigate to "App registrations" and create a new registration
+3. Set redirect URIs (web or mobile as appropriate)
+
+### Step 2: Set API Permissions
+1. Go to "API permissions" in your app registration
+2. Add Microsoft Graph permissions:
+   - \`Calendars.Read\`
+   - \`User.Read\`
+3. Grant admin consent if required
+
+### Step 3: Create Client Secret
+1. Go to "Certificates & secrets"
+2. Create a new client secret and save the value immediately
+
+### Step 4: Get Refresh Token
+1. Use Microsoft's OAuth endpoints to get an authorization code
+2. Exchange the code for an access token and refresh token
+3. Save the refresh token
+
+## Using the Integration Tools
+
+Now you can use these tools to complete the integration:
+
+1. Use \`listRawCalendars\` to see available calendars
+2. Use \`setupCalendarOAuth\` to integrate a specific calendar
+3. Use \`listCalendars\` to verify the integration
+
+Example:
+\`\`\`
+I want to integrate my Google Calendar with Meeting BaaS. I have these OAuth credentials:
+- Client ID: [your-client-id]
+- Client Secret: [your-client-secret]
+- Refresh Token: [your-refresh-token]
+\`\`\`
+
+Need help obtaining OAuth credentials? Just ask for specific guidance for Google or Microsoft integration.`;
+  },
+};
+
+/**
+ * Helper function to check if a calendar has the Meeting BaaS integration
+ */
+export const checkCalendarIntegrationTool: Tool<typeof emptyParams> = {
+  name: "checkCalendarIntegration",
+  description: "Check and diagnose calendar integration status",
+  parameters: emptyParams,
+  execute: async (_args, context) => {
+    const { session, log } = context;
+    log.info("Checking calendar integration status");
+
+    try {
+      // List calendars
+      const calendars = await apiRequest(session, "get", "/calendars/");
+      
+      if (!calendars || calendars.length === 0) {
+        return `No calendars integrated. To integrate a calendar:
+
+1. You need Google/Microsoft OAuth credentials:
+   - Client ID
+   - Client Secret
+   - Refresh Token
+
+2. Use the \`oauthGuidance\` tool for detailed steps to obtain these credentials.
+
+3. Use the \`setupCalendarOAuth\` tool to connect your calendar.
+
+Example command:
+"Connect my Google Calendar using these OAuth credentials: [client-id], [client-secret], [refresh-token]"`;
+      }
+      
+      // List some recent events to check functionality
+      const calendarId = calendars[0].uuid;
+      const events = await apiRequest(
+        session,
+        "get",
+        `/calendar_events/?calendar_id=${calendarId}&status=upcoming`
+      );
+      
+      let eventStatus = "";
+      if (!events.data || events.data.length === 0) {
+        eventStatus = "No upcoming events found in this calendar.";
+      } else {
+        const eventCount = events.data.length;
+        const scheduledCount = events.data.filter((e: any) => e.bot_param).length;
+        eventStatus = `Found ${eventCount} upcoming events, ${scheduledCount} have recording bots scheduled.`;
+      }
+      
+      return `Calendar integration status: ACTIVE
+
+Found ${calendars.length} integrated calendar(s):
+${calendars.map((cal: any) => `- ${cal.name} (${cal.email}) [ID: ${cal.uuid}]`).join('\n')}
+
+${eventStatus}
+
+To schedule recordings for upcoming meetings:
+1. Use \`listUpcomingMeetings\` to see available meetings
+2. Use \`scheduleRecording\` to set up a recording bot for a meeting
+
+To manage calendar integrations:
+- Use \`resyncAllCalendars\` to force a refresh of calendar data
+- Use \`deleteCalendar\` to remove a calendar integration`;
+    } catch (error) {
+      return `Error checking calendar integration: ${error instanceof Error ? error.message : String(error)}
+
+This could indicate:
+- API authentication issues
+- Missing or expired OAuth credentials
+- Network connectivity problems
+
+Try the following:
+1. Verify your API key is correct
+2. Check if OAuth credentials need to be refreshed
+3. Use \`oauthGuidance\` for help setting up OAuth correctly`;
+    }
   },
 };

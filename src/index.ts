@@ -23,7 +23,17 @@ import {
   searchTranscriptByTypeTool,
   findMeetingTopicTool,
   searchVideoSegmentTool,
-  intelligentSearchTool
+  intelligentSearchTool,
+  getCalendarTool,
+  listRawCalendarsTool,
+  setupCalendarOAuthTool,
+  deleteCalendarTool,
+  resyncAllCalendarsTool,
+  listEventsTool,
+  getEventTool,
+  cancelRecordingTool,
+  oauthGuidanceTool,
+  checkCalendarIntegrationTool
 } from "./tools/index.js";
 
 // Import resources
@@ -183,8 +193,18 @@ async function loadClaudeDesktopConfig() {
   server.addTool(searchVideoSegmentTool);
   server.addTool(intelligentSearchTool);
   server.addTool(listCalendarsTool);
+  server.addTool(getCalendarTool);
+  server.addTool(listRawCalendarsTool);
+  server.addTool(setupCalendarOAuthTool);
+  server.addTool(deleteCalendarTool);
+  server.addTool(resyncAllCalendarsTool);
   server.addTool(listUpcomingMeetingsTool);
+  server.addTool(listEventsTool);
+  server.addTool(getEventTool);
   server.addTool(scheduleRecordingTool);
+  server.addTool(cancelRecordingTool);
+  server.addTool(oauthGuidanceTool);
+  server.addTool(checkCalendarIntegrationTool);
   
   // Register resources
   server.addResourceTemplate(meetingTranscriptResource);

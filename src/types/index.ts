@@ -28,8 +28,21 @@ export interface CalendarEvent {
   uuid: string;
   name: string;
   start_time: string;
+  end_time: string;
   deleted: boolean;
   bot_param: unknown;
+  meeting_url?: string;
+  attendees?: Array<{
+    name?: string;
+    email: string;
+  }>;
+  calendar_uuid: string;
+  google_id: string;
+  is_organizer: boolean;
+  is_recurring: boolean;
+  last_updated_at: string;
+  raw: Record<string, any>;
+  recurring_event_id?: string | null;
 }
 
 // Calendar type
