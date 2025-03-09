@@ -251,6 +251,36 @@ The server exposes several tools through the MCP protocol:
    "Force a resync of all my connected calendars"
    ```
 
+### Simplified Calendar Integration
+
+For a simpler approach to calendar integration, you can directly configure your calendar OAuth credentials in the Claude Desktop configuration file:
+
+1. Edit the configuration file:
+   ```bash
+   vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
+   ```
+
+2. Add the `calendarOAuth` section to your botConfig:
+   ```json
+   "botConfig": {
+     // other bot configuration...
+     
+     "calendarOAuth": {
+       "platform": "Google",  // or "Microsoft"
+       "clientId": "YOUR_OAUTH_CLIENT_ID",
+       "clientSecret": "YOUR_OAUTH_CLIENT_SECRET", 
+       "refreshToken": "YOUR_REFRESH_TOKEN",
+       "rawCalendarId": "primary@gmail.com"  // Optional
+     }
+   }
+   ```
+
+3. Save the file and restart Claude Desktop - your calendar will be automatically integrated.
+
+This approach eliminates the need to manually call the OAuth setup tools, making calendar integration a one-time configuration task.
+
+> **Note:** Calendar integration is completely optional. You can use Meeting BaaS without connecting a calendar by simply omitting the `calendarOAuth` section from your configuration. Calendar integration enhances the experience by providing access to your upcoming meetings and enabling automatic recording of calendar events.
+
 ### Analyzing Meeting Content
 
 1. Search for specific topics:
@@ -369,6 +399,16 @@ To integrate with Claude Desktop:
              "priority": "High",
              "followupDate": "2023-12-15",
              "tags": ["technical", "planning", "retrospective"]
+           },
+           
+           // Optional: Direct calendar OAuth integration
+           // Add this section only if you want to enable calendar integration
+           "calendarOAuth": {
+             "platform": "Google",  // or "Microsoft"
+             "clientId": "YOUR_OAUTH_CLIENT_ID",
+             "clientSecret": "YOUR_OAUTH_CLIENT_SECRET",
+             "refreshToken": "YOUR_REFRESH_TOKEN",
+             "rawCalendarId": "primary@gmail.com"  // Optional - specific calendar ID
            }
          }
        }
@@ -396,6 +436,12 @@ The configuration explained:
   - `waitingRoomTimeout`: Timeout in seconds for the bot to leave if stuck in waiting room (optional)
   - `speechToTextProvider`: Provider to use for transcription ("Gladia", "Runpod", "Default") (optional)
   - `speechToTextApiKey`: API key for the speech-to-text provider if required (optional)
+  - `calendarOAuth`: Direct calendar integration with OAuth credentials (optional)
+    - `platform`: "Google" or "Microsoft"
+    - `clientId`: Your OAuth client ID
+    - `clientSecret`: Your OAuth client secret
+    - `refreshToken`: Your OAuth refresh token
+    - `rawCalendarId`: Optional ID of specific calendar to integrate
   - `extra`: Additional metadata about meetings to enhance AI capabilities (optional)
     - Example: 
     ```json
