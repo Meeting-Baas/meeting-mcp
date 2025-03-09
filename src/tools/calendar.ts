@@ -950,11 +950,11 @@ export const scheduleRecordingWithCredentialsTool: Tool<typeof scheduleRecording
       }
 
       const response = await apiRequest(
-        session,
-        "post",
+      session,
+      "post",
         url,
-        payload
-      );
+      payload
+    );
 
       // Check if we got a successful response with event data
       if (Array.isArray(response) && response.length > 0) {
@@ -968,7 +968,7 @@ export const scheduleRecordingWithCredentialsTool: Tool<typeof scheduleRecording
         }
       }
 
-      return "Recording has been scheduled successfully.";
+    return "Recording has been scheduled successfully.";
     } catch (error) {
       return `Error scheduling recording: ${error instanceof Error ? error.message : String(error)}`;
     }
