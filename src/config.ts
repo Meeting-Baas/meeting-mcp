@@ -39,3 +39,18 @@ export const RECORDING_MODES = [
   "audio_only",
 ] as const;
 export type RecordingMode = (typeof RECORDING_MODES)[number];
+
+// Speech-to-text providers
+export const SPEECH_TO_TEXT_PROVIDERS = [
+  "Gladia",
+  "Runpod", 
+  "Default"
+] as const;
+export type SpeechToTextProvider = (typeof SPEECH_TO_TEXT_PROVIDERS)[number];
+
+// Audio frequencies
+export const AUDIO_FREQUENCIES = [
+  "16khz",
+  "24khz"
+] as const;
+export type AudioFrequency = (typeof AUDIO_FREQUENCIES)[number];

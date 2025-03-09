@@ -103,6 +103,19 @@ export class MeetingBaasClient {
     bot_image?: string | null;
     entry_message?: string | null;
     deduplication_key?: string | null;
+    automatic_leave?: {
+      noone_joined_timeout?: number | null;
+      waiting_room_timeout?: number | null;
+    } | null;
+    speech_to_text?: {
+      provider: string;
+      api_key?: string | null;
+    } | null;
+    streaming?: {
+      input?: string | null;
+      output?: string | null;
+      audio_frequency?: string | null;
+    } | null;
     reserved?: boolean;
     recording_mode?: string;
     start_time?: string;

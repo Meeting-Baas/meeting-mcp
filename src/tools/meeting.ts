@@ -5,7 +5,7 @@
 import type { Context, TextContent } from "fastmcp";
 import { z } from "zod";
 import { apiRequest, MeetingBaasClient, SessionAuth } from "../api/client.js";
-import { RECORDING_MODES, BOT_CONFIG } from "../config.js";
+import { RECORDING_MODES, BOT_CONFIG, SPEECH_TO_TEXT_PROVIDERS, AUDIO_FREQUENCIES } from "../config.js";
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -41,6 +41,36 @@ const joinMeetingParams = z.object({
     .string()
     .optional()
     .describe("Unique key to override the 5-minute restriction on joining the same meeting with the same API key"),
+  nooneJoinedTimeout: z
+    .number()
+    .int()
+    .optional()
+    .describe("Timeout in seconds for the bot to wait for participants to join before leaving (default: 600)"),
+  waitingRoomTimeout: z
+    .number()
+    .int()
+    .optional()
+    .describe("Timeout in seconds for the bot to wait in the waiting room before leaving (default: 600)"),
+  speechToTextProvider: z
+    .enum(SPEECH_TO_TEXT_PROVIDERS)
+    .optional()
+    .describe("Speech-to-text provider to use for transcription (default: Default)"),
+  speechToTextApiKey: z
+    .string()
+    .optional()
+    .describe("API key for the speech-to-text provider (if required)"),
+  streamingInputUrl: z
+    .string()
+    .optional()
+    .describe("WebSocket URL to stream audio input to the bot"),
+  streamingOutputUrl: z
+    .string()
+    .optional()
+    .describe("WebSocket URL to stream audio output from the bot"),
+  streamingAudioFrequency: z
+    .enum(AUDIO_FREQUENCIES)
+    .optional()
+    .describe("Audio frequency for streaming (default: 16khz)"),
   reserved: z
     .boolean()
     .default(false)
@@ -207,6 +237,19 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
       reserved: args.reserved,
       recording_mode: args.recordingMode,
       start_time: args.startTime,
+      automatic_leave: args.nooneJoinedTimeout || args.waitingRoomTimeout ? {
+        noone_joined_timeout: args.nooneJoinedTimeout,
+        waiting_room_timeout: args.waitingRoomTimeout
+      } : undefined,
+      speech_to_text: args.speechToTextProvider ? {
+        provider: args.speechToTextProvider,
+        api_key: args.speechToTextApiKey
+      } : undefined,
+      streaming: (args.streamingInputUrl || args.streamingOutputUrl || args.streamingAudioFrequency) ? {
+        input: args.streamingInputUrl,
+        output: args.streamingOutputUrl,
+        audio_frequency: args.streamingAudioFrequency
+      } : undefined,
       extra: {}, // Can be used to add custom data
     };
 
