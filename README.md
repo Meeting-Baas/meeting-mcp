@@ -150,17 +150,27 @@ To integrate with Claude Desktop:
          "command": "/bin/bash",
          "args": [
            "-c",
-           "cd /path/to/mcp-baas && npm run build && npm run start"
+           "cd /path/to/meeting-mcp && (npm run build 1>&2) && MCP_FROM_CLAUDE=true node dist/index.js"
          ],
          "headers": {
-           "x-api-key": "your-api-key"
+           "x-api-key": "YOUR_API_KEY"
          }
        }
      }
    }
    ```
 
+   **Note:** Replace `/path/to/meeting-mcp` with the path to your local repository and `YOUR_API_KEY` with your actual API key.
+
 3. Restart Claude Desktop.
+
+The configuration explained:
+- `command` specifies the shell to use
+- `args` contains the command line arguments:
+  - `cd` to your project directory
+  - Build the project with error output redirected to stderr
+  - Run the server with the `MCP_FROM_CLAUDE=true` environment variable to indicate it's running from Claude Desktop
+- `headers` contains the API key for authentication
 
 ## Integration with Cursor
 
