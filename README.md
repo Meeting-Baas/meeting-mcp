@@ -154,6 +154,11 @@ To integrate with Claude Desktop:
          ],
          "headers": {
            "x-api-key": "YOUR_API_KEY"
+         },
+         "botConfig": {
+           "name": "Meeting Assistant",
+           "image": "https://meetingbaas.com/static/972043b7d604bca0d4b0048c7dd67ad2/fc752/previewFeatures.avif",
+           "entryMessage": "Hello, I'm a bot from Meeting Baas. I'll be taking notes for this meeting."
          }
        }
      }
@@ -171,6 +176,10 @@ The configuration explained:
   - Build the project with error output redirected to stderr
   - Run the server with the `MCP_FROM_CLAUDE=true` environment variable to indicate it's running from Claude Desktop
 - `headers` contains the API key for authentication
+- `botConfig` allows you to customize the bot's appearance and behavior:
+  - `name`: The name displayed for the bot in meetings (default: "Claude Assistant")
+  - `image`: URL to a publicly accessible image to use as the bot's avatar (optional)
+  - `entryMessage`: Message the bot will send when joining a meeting (optional)
 
 ## Integration with Cursor
 
