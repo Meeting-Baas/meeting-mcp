@@ -30,6 +30,7 @@ import {
   deleteCalendarTool,
   resyncAllCalendarsTool,
   listEventsTool,
+  listEventsWithCredentialsTool,
   getEventTool,
   cancelRecordingTool,
   oauthGuidanceTool,
@@ -200,6 +201,7 @@ async function loadClaudeDesktopConfig() {
   server.addTool(resyncAllCalendarsTool);
   server.addTool(listUpcomingMeetingsTool);
   server.addTool(listEventsTool);
+  server.addTool(listEventsWithCredentialsTool);
   server.addTool(getEventTool);
   server.addTool(scheduleRecordingTool);
   server.addTool(cancelRecordingTool);

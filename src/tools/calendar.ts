@@ -793,3 +793,90 @@ Try the following:
     }
   },
 };
+
+/**
+ * List events with comprehensive filtering - VERSION WITH DYNAMIC CREDENTIALS
+ */
+const listEventsWithCredentialsParams = z.object({
+  calendarId: z.string().describe("UUID of the calendar to retrieve events from"),
+  apiKey: z.string().describe("API key for authentication"),
+  status: z.enum(["upcoming", "past", "all"]).optional().describe("Filter events by status (upcoming, past, all)"),
+  startDateGte: z.string().optional().describe("Filter events with start date greater than or equal to (ISO format)"),
+  startDateLte: z.string().optional().describe("Filter events with start date less than or equal to (ISO format)"),
+  attendeeEmail: z.string().optional().describe("Filter events with specific attendee email"),
+  organizerEmail: z.string().optional().describe("Filter events with specific organizer email"),
+  updatedAtGte: z.string().optional().describe("Filter events updated after specified date (ISO format)"),
+  cursor: z.string().optional().describe("Pagination cursor for retrieving more results"),
+  limit: z.number().optional().describe("Maximum number of events to return"),
+});
+
+export const listEventsWithCredentialsTool: Tool<typeof listEventsWithCredentialsParams> = {
+  name: "listEventsWithCredentials",
+  description: "List calendar events with comprehensive filtering options using directly provided credentials",
+  parameters: listEventsWithCredentialsParams,
+  execute: async (args, context) => {
+    const { log } = context;
+    
+    // Create a session with the provided API key
+    const session = { apiKey: args.apiKey };
+    
+    log.info("Listing calendar events with provided credentials", { 
+      calendarId: args.calendarId,
+      filters: args
+    });
+
+    // Build the query parameters
+    let queryParams = `calendar_id=${args.calendarId}`;
+    if (args.status) queryParams += `&status=${args.status}`;
+    if (args.startDateGte) queryParams += `&start_date_gte=${encodeURIComponent(args.startDateGte)}`;
+    if (args.startDateLte) queryParams += `&start_date_lte=${encodeURIComponent(args.startDateLte)}`;
+    if (args.attendeeEmail) queryParams += `&attendee_email=${encodeURIComponent(args.attendeeEmail)}`;
+    if (args.organizerEmail) queryParams += `&organizer_email=${encodeURIComponent(args.organizerEmail)}`;
+    if (args.updatedAtGte) queryParams += `&updated_at_gte=${encodeURIComponent(args.updatedAtGte)}`;
+    if (args.cursor) queryParams += `&cursor=${encodeURIComponent(args.cursor)}`;
+    if (args.limit) queryParams += `&limit=${args.limit}`;
+
+    try {
+      const response = await apiRequest(
+        session,
+        "get",
+        `/calendar_events/?${queryParams}`
+      );
+
+      if (!response.data || response.data.length === 0) {
+        return "No events found matching your criteria.";
+      }
+
+      const eventList = response.data
+        .map((event: CalendarEvent) => {
+          const startTime = new Date(event.start_time).toLocaleString();
+          const endTime = new Date(event.end_time).toLocaleString();
+          const hasBot = event.bot_param && typeof event.bot_param === 'object' && 'uuid' in event.bot_param;
+          const meetingStatus = hasBot ? "🟢 Recording scheduled" : "⚪ No recording";
+          
+          // Get attendee names
+          const attendeeList = (event.attendees || [])
+            .map(a => a.name || a.email)
+            .join(", ") || "None listed";
+          
+          return `## ${event.name}\n` +
+            `**Time**: ${startTime} to ${endTime}\n` +
+            `**Status**: ${meetingStatus}\n` +
+            `**Event ID**: ${event.uuid}\n` +
+            `**Organizer**: ${event.is_organizer ? "You" : "Other"}\n` +
+            `**Attendees**: ${attendeeList}\n`;
+        })
+        .join("\n\n");
+
+      let result = `Calendar Events:\n\n${eventList}`;
+
+      if (response.next) {
+        result += `\n\nMore events available. Use 'cursor: ${response.next}' to see more.`;
+      }
+
+      return result;
+    } catch (error) {
+      return `Error listing events: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};
