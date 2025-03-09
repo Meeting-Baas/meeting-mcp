@@ -20,6 +20,10 @@ import {
   listUpcomingMeetingsTool,
   scheduleRecordingTool,
   searchTranscriptTool,
+  searchTranscriptByTypeTool,
+  findMeetingTopicTool,
+  searchVideoSegmentTool,
+  intelligentSearchTool
 } from "./tools/index.js";
 
 // Import resources
@@ -174,6 +178,10 @@ async function loadClaudeDesktopConfig() {
   server.addTool(leaveMeetingTool);
   server.addTool(getMeetingDataTool);
   server.addTool(searchTranscriptTool);
+  server.addTool(searchTranscriptByTypeTool);
+  server.addTool(findMeetingTopicTool);
+  server.addTool(searchVideoSegmentTool);
+  server.addTool(intelligentSearchTool);
   server.addTool(listCalendarsTool);
   server.addTool(listUpcomingMeetingsTool);
   server.addTool(scheduleRecordingTool);

@@ -96,6 +96,23 @@ The server exposes several tools through the MCP protocol:
 - `searchTranscript`: Searches through meeting transcripts for specific terms
   - Parameters: `bot_id` (the bot that recorded the meeting), `query` (search term)
   - Returns: Matching segments with speaker information and timestamps
+- `searchTranscriptByType`: Searches across meetings of a specific type (using the "extra" field)
+  - Parameters: `meetingType` (type of meeting to search, e.g., "sales", "psychiatric"), `query` (search term), `limit` (max results, default 10)
+  - Returns: Matching segments from meetings of the specified type, with speaker and timestamp information
+- `findMeetingTopic`: Intelligently searches for a topic in a meeting, providing context around the mentions
+  - Parameters: `meetingId` (the meeting to search), `topic` (the topic to find)
+  - Returns: Contextual segments that mention the topic, with surrounding conversation for context
+- `searchVideoSegment`: Finds specific segments of a video based on time range or speaker
+  - Parameters: `botId` (the bot that recorded the meeting), `startTime` (optional), `endTime` (optional), `speaker` (optional)
+  - Returns: Video segments with direct links to specific timestamps
+- `intelligentSearch`: Performs an adaptive search across all meeting data with natural language understanding
+  - Parameters: 
+    - `query` (natural language search query - supports meeting types, topics, speakers, dates, etc.)
+    - `filters` (optional structured filters to apply)
+    - `includeContext` (whether to include surrounding conversation, default: true)
+    - `maxResults` (maximum results to return, default: 20)
+    - `sortBy` (how to sort results: "relevance", "date", or "speaker", default: "relevance")
+  - Returns: Rich, context-aware search results with meeting metadata and direct video links
 - `getTranscriptSummary`: Gets an AI-generated summary of meeting content
 
 ## Example Workflows
@@ -132,6 +149,34 @@ The server exposes several tools through the MCP protocol:
 3. Get meeting summaries:
    ```
    "Summarize the key points from this morning's standup meeting"
+   ```
+
+4. Search across meeting types:
+   ```
+   "Search for discussions about patient symptoms across all psychiatric meetings"
+   ```
+
+5. Find topics with context:
+   ```
+   "Find discussions about quarterly targets in meeting abc-123 and show me the surrounding conversation"
+   ```
+
+6. Find specific video segments:
+   ```
+   "Show me the video segments where John was speaking between 15 and 20 minutes into meeting xyz-456"
+   ```
+
+7. Search using meeting metadata:
+   ```
+   "Search my sales meetings for mentions of the new pricing strategy"
+   ```
+
+8. Use natural language search across all meetings:
+   ```
+   "Find any discussions about budget concerns in meetings from last week"
+   "Show me what Sarah said about the product roadmap in recent meetings"
+   "Search for conversations about customer feedback in yesterday's standup"
+   "Find meeting segments where the team discussed implementation timeframes"
    ```
 
 ## Configuration
@@ -180,7 +225,17 @@ To integrate with Claude Desktop:
            "extra": {
              "meetingType": "sales",
              "summaryPrompt": "Focus on action items and decision points",
-             "searchKeywords": ["budget", "timeline", "deliverables"]
+             "searchKeywords": ["budget", "timeline", "deliverables"],
+             "timeStampHighlights": [
+               {"time": "00:05:23", "note": "Discussion about Q2 sales numbers"},
+               {"time": "00:12:47", "note": "Team disagreement on marketing strategy"}
+             ],
+             "participants": ["John Smith", "Jane Doe", "Bob Johnson"],
+             "project": "Project Phoenix",
+             "department": "Engineering",
+             "priority": "High",
+             "followupDate": "2023-12-15",
+             "tags": ["technical", "planning", "retrospective"]
            }
          }
        }
@@ -209,7 +264,26 @@ The configuration explained:
   - `speechToTextProvider`: Provider to use for transcription ("Gladia", "Runpod", "Default") (optional)
   - `speechToTextApiKey`: API key for the speech-to-text provider if required (optional)
   - `extra`: Additional metadata about meetings to enhance AI capabilities (optional)
-    - Example: `{"meetingType": "sales", "summaryPrompt": "Focus on action items and decision points", "searchKeywords": ["budget", "timeline", "deliverables"]}`
+    - Example: 
+    ```json
+    {
+      "meetingType": "sales",                                 // Used by searchTranscriptByType and intelligentSearch
+      "summaryPrompt": "Focus on action items and decision points",
+      "searchKeywords": ["budget", "timeline", "deliverables"],  // Key terms that can be easily searched
+      "timeStampHighlights": [                                // Can be used with searchVideoSegment
+        {"time": "00:05:23", "note": "Discussion about Q2 sales numbers"},
+        {"time": "00:12:47", "note": "Team disagreement on marketing strategy"}
+      ],
+      "participants": ["John Smith", "Jane Doe", "Bob Johnson"],  // Meeting participants for more context
+      "project": "Project Phoenix",                           // Project association for filtering
+      "department": "Engineering",                            // Organizational context
+      "priority": "High",                                     // Meeting importance
+      "followupDate": "2023-12-15",                           // When to revisit topics
+      "tags": ["technical", "planning", "retrospective"]      // Flexible tagging system
+    }
+    ```
+
+The `extra` field is extremely flexible - you can add any structured metadata that makes sense for your organization and use cases. All of this metadata is fully searchable by the `intelligentSearch` tool, which can extract meaning from natural language queries.
 
 ## Integration with Cursor
 
