@@ -105,14 +105,22 @@ The server exposes several tools through the MCP protocol:
 - `searchVideoSegment`: Finds specific segments of a video based on time range or speaker
   - Parameters: `botId` (the bot that recorded the meeting), `startTime` (optional), `endTime` (optional), `speaker` (optional)
   - Returns: Video segments with direct links to specific timestamps
-- `intelligentSearch`: Performs an adaptive search across all meeting data with natural language understanding
+- `intelligentSearch`: Performs an adaptive search across meeting data with natural language understanding
   - Parameters: 
     - `query` (natural language search query - supports meeting types, topics, speakers, dates, etc.)
-    - `filters` (optional structured filters to apply)
+    - `filters` (optional structured filters including `botId`, `calendarId`, `meetingType`, `speaker`, `startTime`, `endTime`)
     - `includeContext` (whether to include surrounding conversation, default: true)
     - `maxResults` (maximum results to return, default: 20)
     - `sortBy` (how to sort results: "relevance", "date", or "speaker", default: "relevance")
   - Returns: Rich, context-aware search results with meeting metadata and direct video links
+  - Search approaches:
+    - **Bot ID-based**: Searches within a specific meeting when you know the bot ID
+    - **Calendar-based**: Searches across calendar events and their associated recordings
+    - **Recent meetings**: Maintains session history of recently used bots for follow-up searches
+  - Example queries:
+    - "Find mentions of budget in meeting with bot ID abc-123"
+    - "Search my marketing calendar for discussions about the Q4 campaign"
+    - "What did Sarah say in our most recent meeting?"
 - `getTranscriptSummary`: Gets an AI-generated summary of meeting content
 
 ## Example Workflows
@@ -177,6 +185,20 @@ The server exposes several tools through the MCP protocol:
    "Show me what Sarah said about the product roadmap in recent meetings"
    "Search for conversations about customer feedback in yesterday's standup"
    "Find meeting segments where the team discussed implementation timeframes"
+   ```
+
+9. Use the different intelligent search approaches:
+   ```
+   // Bot ID-based search
+   "Search in meeting abc-123 for mentions of the new product launch"
+   
+   // Calendar-based search
+   "Find discussions about deadlines in my marketing team calendar"
+   "Search through my work calendar for meetings where we discussed the budget"
+   
+   // Recent meetings search (no explicit bot ID needed)
+   "What did Alex say about the database migration?"
+   "Show me the parts where we talked about customer requirements"
    ```
 
 ## Configuration
