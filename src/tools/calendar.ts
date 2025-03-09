@@ -880,3 +880,143 @@ export const listEventsWithCredentialsTool: Tool<typeof listEventsWithCredential
     }
   },
 };
+
+/**
+ * Schedule a recording with direct credentials
+ */
+const scheduleRecordingWithCredentialsParams = z.object({
+  eventId: z.string().uuid()
+    .describe("UUID of the calendar event to record"),
+  apiKey: z.string()
+    .describe("API key for authentication"),
+  botName: z.string()
+    .describe("Name to display for the bot in the meeting"),
+  botImage: z.string().url().optional()
+    .describe("URL to an image for the bot's avatar (optional)"),
+  entryMessage: z.string().optional()
+    .describe("Message the bot will send when joining the meeting (optional)"),
+  recordingMode: z.enum(["speaker_view", "gallery_view", "audio_only"] as const).default("speaker_view")
+    .describe("Recording mode: 'speaker_view' (default), 'gallery_view', or 'audio_only'"),
+  speechToTextProvider: z.enum(["Gladia", "Runpod", "Default"] as const).optional()
+    .describe("Provider for speech-to-text transcription (optional)"),
+  speechToTextApiKey: z.string().optional()
+    .describe("API key for the speech-to-text provider if required (optional)"),
+  extra: z.record(z.any()).optional()
+    .describe("Additional metadata about the meeting (e.g., meetingType, participants)"),
+  allOccurrences: z.boolean().optional().default(false)
+    .describe("For recurring events, schedule recording for all occurrences (true) or just this instance (false)"),
+});
+
+export const scheduleRecordingWithCredentialsTool: Tool<typeof scheduleRecordingWithCredentialsParams> = {
+  name: "scheduleRecordingWithCredentials",
+  description: "Schedule a bot to record an upcoming meeting using directly provided credentials",
+  parameters: scheduleRecordingWithCredentialsParams,
+  execute: async (args, context) => {
+    const { log } = context;
+    
+    // Create a session with the provided API key
+    const session = { apiKey: args.apiKey };
+    
+    log.info("Scheduling meeting recording with provided credentials", { 
+      eventId: args.eventId,
+      botName: args.botName,
+      recordingMode: args.recordingMode,
+      allOccurrences: args.allOccurrences
+    });
+
+    const payload: any = {
+      bot_name: args.botName,
+      extra: args.extra || {}
+    };
+
+    if (args.botImage) payload.bot_image = args.botImage;
+    if (args.entryMessage) payload.enter_message = args.entryMessage;
+    if (args.recordingMode) payload.recording_mode = args.recordingMode;
+    
+    if (args.speechToTextProvider) {
+      payload.speech_to_text = {
+        provider: args.speechToTextProvider
+      };
+      
+      if (args.speechToTextApiKey) {
+        payload.speech_to_text.api_key = args.speechToTextApiKey;
+      }
+    }
+
+    try {
+      let url = `/calendar_events/${args.eventId}/bot`;
+      if (args.allOccurrences) {
+        url += `?all_occurrences=true`;
+      }
+
+      const response = await apiRequest(
+        session,
+        "post",
+        url,
+        payload
+      );
+
+      // Check if we got a successful response with event data
+      if (Array.isArray(response) && response.length > 0) {
+        const eventCount = response.length;
+        const firstEventName = response[0].name;
+        
+        if (eventCount === 1) {
+          return `Recording has been scheduled successfully for "${firstEventName}".`;
+        } else {
+          return `Recording has been scheduled successfully for ${eventCount} instances of "${firstEventName}".`;
+        }
+      }
+
+      return "Recording has been scheduled successfully.";
+    } catch (error) {
+      return `Error scheduling recording: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};
+
+/**
+ * Cancel a scheduled recording with direct credentials
+ */
+const cancelRecordingWithCredentialsParams = z.object({
+  eventId: z.string().uuid()
+    .describe("UUID of the calendar event to cancel recording for"),
+  apiKey: z.string()
+    .describe("API key for authentication"),
+  allOccurrences: z.boolean().optional().default(false)
+    .describe("For recurring events, cancel recording for all occurrences (true) or just this instance (false)"),
+});
+
+export const cancelRecordingWithCredentialsTool: Tool<typeof cancelRecordingWithCredentialsParams> = {
+  name: "cancelRecordingWithCredentials",
+  description: "Cancel a previously scheduled recording using directly provided credentials",
+  parameters: cancelRecordingWithCredentialsParams,
+  execute: async (args, context) => {
+    const { log } = context;
+    
+    // Create a session with the provided API key
+    const session = { apiKey: args.apiKey };
+    
+    log.info("Canceling recording with provided credentials", { 
+      eventId: args.eventId,
+      allOccurrences: args.allOccurrences
+    });
+
+    try {
+      let url = `/calendar_events/${args.eventId}/bot`;
+      if (args.allOccurrences) {
+        url += `?all_occurrences=true`;
+      }
+
+      await apiRequest(
+        session,
+        "delete",
+        url
+      );
+
+      return `Recording has been successfully canceled for event ${args.eventId}${args.allOccurrences ? " and all its occurrences" : ""}.`;
+    } catch (error) {
+      return `Error canceling recording: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};

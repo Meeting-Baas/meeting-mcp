@@ -19,6 +19,7 @@ import {
   listCalendarsTool,
   listUpcomingMeetingsTool,
   scheduleRecordingTool,
+  scheduleRecordingWithCredentialsTool,
   searchTranscriptTool,
   searchTranscriptByTypeTool,
   findMeetingTopicTool,
@@ -33,6 +34,7 @@ import {
   listEventsWithCredentialsTool,
   getEventTool,
   cancelRecordingTool,
+  cancelRecordingWithCredentialsTool,
   oauthGuidanceTool,
   checkCalendarIntegrationTool
 } from "./tools/index.js";
@@ -204,7 +206,9 @@ async function loadClaudeDesktopConfig() {
   server.addTool(listEventsWithCredentialsTool);
   server.addTool(getEventTool);
   server.addTool(scheduleRecordingTool);
+  server.addTool(scheduleRecordingWithCredentialsTool);
   server.addTool(cancelRecordingTool);
+  server.addTool(cancelRecordingWithCredentialsTool);
   server.addTool(oauthGuidanceTool);
   server.addTool(checkCalendarIntegrationTool);
   
