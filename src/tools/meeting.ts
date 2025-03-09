@@ -37,6 +37,10 @@ const joinMeetingParams = z.object({
     .string()
     .optional()
     .describe("Message the bot will send upon joining the meeting (OPTIONAL: if omitted, will use message from configuration)"),
+  deduplicationKey: z
+    .string()
+    .optional()
+    .describe("Unique key to override the 5-minute restriction on joining the same meeting with the same API key"),
   reserved: z
     .boolean()
     .default(false)
@@ -199,6 +203,7 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
       bot_name: botName,
       bot_image: botImage,
       entry_message: entryMessage,
+      deduplication_key: args.deduplicationKey,
       reserved: args.reserved,
       recording_mode: args.recordingMode,
       start_time: args.startTime,

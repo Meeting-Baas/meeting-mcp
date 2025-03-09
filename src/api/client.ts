@@ -102,6 +102,7 @@ export class MeetingBaasClient {
     bot_name: string | null;
     bot_image?: string | null;
     entry_message?: string | null;
+    deduplication_key?: string | null;
     reserved?: boolean;
     recording_mode?: string;
     start_time?: string;
