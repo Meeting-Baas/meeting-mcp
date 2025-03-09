@@ -41,6 +41,38 @@ fi
 find "$CURSOR_DIR" -type f -name "*.log" -exec truncate -s 0 {} \;
 echo "Truncated log files"
 
+# Check for log files in the parent directory
+LOG_DIR="/Users/lazmini/Library/Logs/Claude"
+if [ -d "$LOG_DIR" ]; then
+  echo "Checking Claude logs directory..."
+  
+  # Find MCP server logs
+  MCP_LOGS=$(find "$LOG_DIR" -name "mcp-server-meetingbaas.log*")
+  
+  for log_file in $MCP_LOGS; do
+    if [ -f "$log_file" ]; then
+      echo "Processing log file: $log_file"
+      
+      # Get file size before
+      BEFORE_LOG_SIZE=$(du -h "$log_file" | awk '{print $1}')
+      
+      # Create a temporary file
+      TEMP_FILE=$(mktemp)
+      
+      # Filter out ping/pong messages and keep other important logs
+      grep -v '"method":"ping"' "$log_file" | grep -v '"result":{},"jsonrpc":"2.0","id":[0-9]\+' > "$TEMP_FILE"
+      
+      # Replace the original file with the filtered content
+      mv "$TEMP_FILE" "$log_file"
+      
+      # Get file size after
+      AFTER_LOG_SIZE=$(du -h "$log_file" | awk '{print $1}')
+      
+      echo "  Removed ping/pong messages: $BEFORE_LOG_SIZE -> $AFTER_LOG_SIZE"
+    fi
+  done
+fi
+
 # Optional: Completely remove the mdc files which contain the full API specs
 # Uncomment if you want to remove these completely
 # find "$CURSOR_DIR/rules" -type f -name "*.mdc" -delete

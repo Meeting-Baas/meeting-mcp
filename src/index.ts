@@ -50,9 +50,12 @@ type SessionAuth = { apiKey: string };
 
 // Set up proper error logging
 // This ensures logs go to stderr instead of stdout to avoid interfering with JSON communication
-const serverLog = (message: string) => {
-  console.error(`[MCP Server] ${message}`);
-};
+import { createServerLogger, setupPingFiltering } from "./utils/logging.js";
+
+// Set up ping message filtering to reduce log noise
+setupPingFiltering();
+
+const serverLog = createServerLogger("MCP Server");
 
 // Log startup information
 serverLog("========== SERVER STARTUP ==========");
@@ -174,7 +177,7 @@ async function loadClaudeDesktopConfig() {
         serverLog(`Authentication error: ${error}`);
         throw error;
       }
-    },
+    }
   });
   
   // Register tools and add debug event listeners
