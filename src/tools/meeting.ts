@@ -83,6 +83,10 @@ const joinMeetingParams = z.object({
     .enum(RECORDING_MODES)
     .default("speaker_view")
     .describe("Recording mode"),
+  extra: z
+    .record(z.string(), z.any())
+    .optional()
+    .describe("Additional metadata for the meeting (e.g., meeting type, custom summary prompt, search keywords)"),
 });
 
 const searchTranscriptParams = z.object({
@@ -175,6 +179,16 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
       }
     }
     
+    // Get extra fields from various sources
+    let extra = args.extra;
+    if (!extra) {
+      if (claudeConfig && claudeConfig.extra) {
+        extra = claudeConfig.extra;
+      } else if (BOT_CONFIG.defaultExtra) {
+        extra = BOT_CONFIG.defaultExtra;
+      }
+    }
+    
     // Only prompt for a name if no name is available from any source
     if (!botName) {
       log.info("No bot name available from any source");
@@ -250,7 +264,7 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
         output: args.streamingOutputUrl,
         audio_frequency: args.streamingAudioFrequency
       } : undefined,
-      extra: {}, // Can be used to add custom data
+      extra: extra,
     };
 
     try {

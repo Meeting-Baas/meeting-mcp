@@ -20,15 +20,18 @@ export const BOT_CONFIG = {
   // Default bot image URL
   defaultBotImage: process.env.MEETING_BOT_IMAGE || null,
   // Default bot entry message
-  defaultEntryMessage: process.env.MEETING_BOT_ENTRY_MESSAGE || null
+  defaultEntryMessage: process.env.MEETING_BOT_ENTRY_MESSAGE || null,
+  // Default extra metadata
+  defaultExtra: process.env.MEETING_BOT_EXTRA ? JSON.parse(process.env.MEETING_BOT_EXTRA) : null
 };
 
 // Log bot configuration at startup
-if (BOT_CONFIG.defaultBotName || BOT_CONFIG.defaultBotImage || BOT_CONFIG.defaultEntryMessage) {
+if (BOT_CONFIG.defaultBotName || BOT_CONFIG.defaultBotImage || BOT_CONFIG.defaultEntryMessage || BOT_CONFIG.defaultExtra) {
   console.error('[MCP Server] Bot configuration loaded:',
     BOT_CONFIG.defaultBotName ? `name="${BOT_CONFIG.defaultBotName}"` : '',
     BOT_CONFIG.defaultBotImage ? 'image=✓' : '',
-    BOT_CONFIG.defaultEntryMessage ? 'message=✓' : ''
+    BOT_CONFIG.defaultEntryMessage ? 'message=✓' : '',
+    BOT_CONFIG.defaultExtra ? 'extra=✓' : ''
   );
 }
 

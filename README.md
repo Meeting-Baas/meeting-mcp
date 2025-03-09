@@ -84,6 +84,7 @@ The server exposes several tools through the MCP protocol:
     - `streamingInputUrl` (optional WebSocket URL to stream audio input)
     - `streamingOutputUrl` (optional WebSocket URL to stream audio output)
     - `streamingAudioFrequency` (optional frequency for streaming: "16khz" or "24khz")
+    - `extra` (optional object with additional metadata about the meeting, such as meeting type, custom summary prompt, search keywords)
   - Returns: Bot details including ID and join status
 - `getBots`: Lists all bots and their associated meetings
 - `getBotsByMeeting`: Gets bots for a specific meeting URL
@@ -175,7 +176,12 @@ To integrate with Claude Desktop:
            "nooneJoinedTimeout": 600,
            "waitingRoomTimeout": 600,
            "speechToTextProvider": "Gladia",
-           "speechToTextApiKey": "YOUR_SPEECH_TO_TEXT_API_KEY"
+           "speechToTextApiKey": "YOUR_SPEECH_TO_TEXT_API_KEY",
+           "extra": {
+             "meetingType": "sales",
+             "summaryPrompt": "Focus on action items and decision points",
+             "searchKeywords": ["budget", "timeline", "deliverables"]
+           }
          }
        }
      }
@@ -202,6 +208,8 @@ The configuration explained:
   - `waitingRoomTimeout`: Timeout in seconds for the bot to leave if stuck in waiting room (optional)
   - `speechToTextProvider`: Provider to use for transcription ("Gladia", "Runpod", "Default") (optional)
   - `speechToTextApiKey`: API key for the speech-to-text provider if required (optional)
+  - `extra`: Additional metadata about meetings to enhance AI capabilities (optional)
+    - Example: `{"meetingType": "sales", "summaryPrompt": "Focus on action items and decision points", "searchKeywords": ["budget", "timeline", "deliverables"]}`
 
 ## Integration with Cursor
 

@@ -94,6 +94,12 @@ async function loadClaudeDesktopConfig() {
               configItems.push("message");
             }
             
+            // Set extra fields if available
+            if (botConfig.extra) {
+              process.env.MEETING_BOT_EXTRA = JSON.stringify(botConfig.extra);
+              configItems.push("extra");
+            }
+            
             if (configItems.length > 0) {
               serverLog(`Bot configuration loaded from config: ${configItems.join(", ")}`);
             }
