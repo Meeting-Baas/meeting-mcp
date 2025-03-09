@@ -598,16 +598,57 @@ export const oauthGuidanceTool: Tool<typeof emptyParams> = {
     const { log } = context;
     log.info("Providing OAuth guidance");
 
-    return `# Calendar OAuth Integration Guide
+    return `# Calendar Integration Options
 
-## Overview
-To integrate your Google or Microsoft calendars with Meeting BaaS, you need to set up OAuth. This process requires:
+## Quick Integration Options
 
-1. Creating OAuth credentials (client ID and secret) in Google/Microsoft developer portals
-2. Obtaining a refresh token through the OAuth flow
-3. Using these credentials to connect your calendars
+You have two simple ways to integrate your calendar:
 
-## Google Calendar Integration
+### Option 1: Provide credentials directly in this chat
+You can simply provide your credentials right here:
+
+\`\`\`
+"Set up my calendar with these credentials:
+- Platform: Google (or Microsoft)
+- Client ID: your-client-id-here
+- Client Secret: your-client-secret-here
+- Refresh Token: your-refresh-token-here
+- Raw Calendar ID: primary@gmail.com (optional)"
+\`\`\`
+
+### Option 2: Configure once in Claude Desktop settings (recommended)
+For a more permanent solution that doesn't require entering credentials each time:
+
+1. Edit your configuration file:
+   \`\`\`bash
+   vim ~/Library/Application\\ Support/Claude/claude_desktop_config.json
+   \`\`\`
+
+2. Add the \`calendarOAuth\` section to your botConfig:
+   \`\`\`json
+   "botConfig": {
+     // other bot configuration...
+     
+     "calendarOAuth": {
+       "platform": "Google",  // or "Microsoft"
+       "clientId": "YOUR_OAUTH_CLIENT_ID",
+       "clientSecret": "YOUR_OAUTH_CLIENT_SECRET", 
+       "refreshToken": "YOUR_REFRESH_TOKEN",
+       "rawCalendarId": "primary@gmail.com"  // Optional
+     }
+   }
+   \`\`\`
+
+3. Save the file and restart Claude Desktop
+
+> **Note:** Calendar integration is completely optional. You can use Meeting BaaS without connecting a calendar.
+
+## Need OAuth Credentials?
+
+If you need to obtain OAuth credentials first, here's how:
+
+<details>
+<summary>## Detailed Google Calendar OAuth Setup Instructions</summary>
 
 ### Step 1: Create a Google Cloud Project
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
@@ -636,8 +677,10 @@ To integrate your Google or Microsoft calendars with Meeting BaaS, you need to s
 4. Select Calendar API scopes and authorize
 5. Exchange authorization code for tokens
 6. Save the refresh token
+</details>
 
-## Microsoft Calendar Integration
+<details>
+<summary>## Detailed Microsoft Calendar OAuth Setup Instructions</summary>
 
 ### Step 1: Register Application in Azure
 1. Go to [Azure Portal](https://portal.azure.com)
@@ -659,24 +702,17 @@ To integrate your Google or Microsoft calendars with Meeting BaaS, you need to s
 1. Use Microsoft's OAuth endpoints to get an authorization code
 2. Exchange the code for an access token and refresh token
 3. Save the refresh token
+</details>
 
 ## Using the Integration Tools
 
-Now you can use these tools to complete the integration:
+Once you have your credentials, you can:
 
 1. Use \`listRawCalendars\` to see available calendars
 2. Use \`setupCalendarOAuth\` to integrate a specific calendar
 3. Use \`listCalendars\` to verify the integration
 
-Example:
-\`\`\`
-I want to integrate my Google Calendar with Meeting BaaS. I have these OAuth credentials:
-- Client ID: [your-client-id]
-- Client Secret: [your-client-secret]
-- Refresh Token: [your-refresh-token]
-\`\`\`
-
-Need help obtaining OAuth credentials? Just ask for specific guidance for Google or Microsoft integration.`;
+Need help with a specific step? Just ask!`;
   },
 };
 
