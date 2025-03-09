@@ -7,6 +7,7 @@ import { z } from "zod";
 import { apiRequest } from "../api/client.js";
 import { Transcript } from "../types/index.js";
 import { formatTime } from "../utils/formatters.js";
+import { getTinyDb, BotRecord } from "../utils/tinyDb.js";
 
 // Define our session auth type
 type SessionAuth = { apiKey: string };
@@ -94,6 +95,7 @@ export const searchTranscriptTool: Tool<typeof searchTranscriptParams> = {
   parameters: searchTranscriptParams,
   execute: async (args, context) => {
     const { session, log } = context;
+    const extendedSession = session as ExtendedSessionAuth;
     log.info("Searching transcripts", { botId: args.botId, query: args.query });
 
     const response = await apiRequest(
@@ -101,6 +103,10 @@ export const searchTranscriptTool: Tool<typeof searchTranscriptParams> = {
       "get",
       `/bots/meeting_data?bot_id=${args.botId}`
     );
+
+    // Track this bot in our TinyDB
+    const metadata = extractBotMetadata(response);
+    updateRecentBots(extendedSession, args.botId, metadata);
 
     const transcripts: Transcript[] = response.bot_data.transcripts;
     const results = transcripts.filter((transcript: Transcript) => {
@@ -141,6 +147,7 @@ export const searchTranscriptByTypeTool: Tool<typeof searchTranscriptByTypeParam
   parameters: searchTranscriptByTypeParams,
   execute: async (args, context) => {
     const { session, log } = context;
+    const extendedSession = session as ExtendedSessionAuth;
     log.info("Searching transcripts by type", { 
       meetingType: args.meetingType, 
       query: args.query, 
@@ -174,6 +181,10 @@ export const searchTranscriptByTypeTool: Tool<typeof searchTranscriptByTypeParam
           "get",
           `/bots/meeting_data?bot_id=${bot.uuid}`
         );
+
+        // Track this bot in our TinyDB
+        const metadata = extractBotMetadata(response);
+        updateRecentBots(extendedSession, bot.uuid, metadata);
 
         if (response.bot_data && response.bot_data.transcripts) {
           const transcripts: Transcript[] = response.bot_data.transcripts;
@@ -237,6 +248,7 @@ export const findMeetingTopicTool: Tool<typeof findMeetingTopicParams> = {
   parameters: findMeetingTopicParams,
   execute: async (args, context) => {
     const { session, log } = context;
+    const extendedSession = session as ExtendedSessionAuth;
     log.info("Finding meeting topic", { meetingId: args.meetingId, topic: args.topic });
 
     const response = await apiRequest(
@@ -244,6 +256,10 @@ export const findMeetingTopicTool: Tool<typeof findMeetingTopicParams> = {
       "get",
       `/bots/meeting_data?meeting_id=${args.meetingId}`
     );
+
+    // Track this bot in our TinyDB
+    const metadata = extractBotMetadata(response);
+    updateRecentBots(extendedSession, args.meetingId, metadata);
 
     // Get complete transcript text
     const transcripts: Transcript[] = response.bot_data.transcripts;
@@ -319,6 +335,7 @@ export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
   parameters: searchVideoSegmentParams,
   execute: async (args, context) => {
     const { session, log } = context;
+    const extendedSession = session as ExtendedSessionAuth;
     log.info("Searching video segments", { 
       botId: args.botId, 
       startTime: args.startTime, 
@@ -331,6 +348,10 @@ export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
       "get",
       `/bots/meeting_data?bot_id=${args.botId}`
     );
+
+    // Track this bot in our TinyDB
+    const metadata = extractBotMetadata(response);
+    updateRecentBots(extendedSession, args.botId, metadata);
 
     const transcripts: Transcript[] = response.bot_data.transcripts;
     
@@ -440,7 +461,13 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
     try {
       // Step 1: First, attempt to determine the search approach based on what information we have
       
-      // Track what approach we're using
+      // Initialize our TinyDB for persistent bot tracking
+      const db = getTinyDb();
+      
+      // Load recent bots from the persistent store into the session
+      db.updateSession(extendedSession);
+      
+      // Rest of the determination logic remains similar
       let searchApproach = "unknown";
       let botId: string | null = null;
       let calendarId: string | null = null;
@@ -458,6 +485,51 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         botId = args.filters.botId;
         searchApproach = "bot-id";
         log.info(`Using bot ID from filters: ${botId}`);
+      }
+      
+      // Use the stored bot data to enhance our search capabilities
+      if (!botId) {
+        // Try to identify a bot by topic or meeting type from the query
+        const keyterms = args.query.toLowerCase().split(/\s+/);
+        const recentBots = db.getRecentBots(10); // Get more bots for better matching
+        
+        for (const bot of recentBots) {
+          // Check if the query contains any of the bot's topics
+          if (bot.topics && bot.topics.length > 0) {
+            const matchesTopic = bot.topics.some(topic => 
+              keyterms.includes(topic.toLowerCase())
+            );
+            
+            if (matchesTopic) {
+              botId = bot.id;
+              searchApproach = "topic-match";
+              log.info(`Matched topic in bot ${botId}: ${bot.topics.join(', ')}`);
+              break;
+            }
+          }
+          
+          // Check if query mentions meeting type
+          if (bot.meetingType && args.query.toLowerCase().includes(bot.meetingType.toLowerCase())) {
+            botId = bot.id;
+            searchApproach = "meeting-type-match";
+            log.info(`Matched meeting type in bot ${botId}: ${bot.meetingType}`);
+            break;
+          }
+          
+          // Check if query mentions any participants
+          if (bot.participants && bot.participants.length > 0) {
+            const matchesParticipant = bot.participants.some(participant => 
+              args.query.toLowerCase().includes(participant.toLowerCase())
+            );
+            
+            if (matchesParticipant) {
+              botId = bot.id;
+              searchApproach = "participant-match";
+              log.info(`Matched participant in bot ${botId}`);
+              break;
+            }
+          }
+        }
       }
       
       // Check if we have a calendar ID 
@@ -570,29 +642,54 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
       // Step 2: Execute search based on available information
       
       // Approach 1: Direct Bot ID search - most straightforward approach
-      if (searchApproach === "bot-id" && botId) {
+      if (searchApproach === "bot-id" || searchApproach === "topic-match" || 
+          searchApproach === "meeting-type-match" || searchApproach === "participant-match") {
+        if (!botId) {
+          return "Could not determine which meeting to search. Please provide a bot ID or more specific information.";
+        }
+        
         log.info(`Searching specific bot with ID: ${botId}`);
         
-        // Decide which search tool to use based on additional parameters
-        if (speaker || (timeRange.startTime !== undefined || timeRange.endTime !== undefined)) {
-          // Use video segment search for time/speaker filtering
-          return await searchVideoSegmentTool.execute({
-            botId: botId,
-            startTime: timeRange.startTime,
-            endTime: timeRange.endTime,
-            speaker: speaker || undefined
-          }, context);
-        } else {
-          // Use standard transcript search
-          const result = await searchTranscriptTool.execute({
-            botId: botId,
-            query: searchTerms
-          }, context);
+        try {
+          // Get bot metadata to enhance response
+          const botData = await apiRequest(
+            session,
+            "get",
+            `/bots/meeting_data?bot_id=${botId}`
+          );
           
-          // Update session with the recently used bot ID
-          updateRecentBots(extendedSession, botId);
+          // Extract and store metadata for future searches
+          const metadata = extractBotMetadata(botData);
           
-          return result;
+          // Decide which search tool to use based on additional parameters
+          if (speaker || (timeRange.startTime !== undefined || timeRange.endTime !== undefined)) {
+            // Use video segment search for time/speaker filtering
+            const result = await searchVideoSegmentTool.execute({
+              botId: botId,
+              startTime: timeRange.startTime,
+              endTime: timeRange.endTime,
+              speaker: speaker || undefined // Convert null to undefined
+            }, context);
+            
+            // Update the persisted database with this bot's metadata
+            updateRecentBots(extendedSession, botId, metadata);
+            
+            return result;
+          } else {
+            // Use standard transcript search
+            const result = await searchTranscriptTool.execute({
+              botId: botId,
+              query: args.query
+            }, context);
+            
+            // Update the persisted database with this bot's metadata
+            updateRecentBots(extendedSession, botId, metadata);
+            
+            return result;
+          }
+        } catch (error) {
+          log.error(`Error fetching bot data for ${botId}`, { error: String(error) });
+          return `Error retrieving bot data: ${error instanceof Error ? error.message : String(error)}`;
         }
       }
       
@@ -775,7 +872,8 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
 };
 
 // Helper function to update the session with recently used bot IDs
-function updateRecentBots(session: ExtendedSessionAuth, botId: string) {
+function updateRecentBots(session: ExtendedSessionAuth, botId: string, botMetadata?: Partial<BotRecord>) {
+  // Update the in-memory session for immediate use
   if (!session.recentBotIds) {
     session.recentBotIds = [];
   }
@@ -790,4 +888,49 @@ function updateRecentBots(session: ExtendedSessionAuth, botId: string) {
   if (session.recentBotIds.length > 5) {
     session.recentBotIds = session.recentBotIds.slice(0, 5);
   }
+  
+  // Update the persistent database with this bot and its metadata
+  const db = getTinyDb();
+  db.trackBot({
+    id: botId,
+    ...(botMetadata || {})
+  });
+}
+
+// Helper function to extract bot metadata from API response
+function extractBotMetadata(apiResponse: any): Partial<BotRecord> {
+  if (!apiResponse || !apiResponse.bot_data || !apiResponse.bot_data.bot) {
+    return {};
+  }
+  
+  const bot = apiResponse.bot_data.bot;
+  
+  // Extract key topics from transcripts if available
+  const topics: string[] = [];
+  if (apiResponse.bot_data.transcripts && Array.isArray(apiResponse.bot_data.transcripts)) {
+    // This is a simplified approach - in a real implementation, you might
+    // use NLP to extract actual topics from the transcript text
+    const transcriptText = apiResponse.bot_data.transcripts
+      .map((t: any) => t.words?.map((w: any) => w.text).join(' ') || '')
+      .join(' ');
+      
+    // Extract common keywords as potential topics
+    const commonKeywords = ['budget', 'project', 'deadline', 'timeline', 'goals', 'product'];
+    commonKeywords.forEach(keyword => {
+      if (transcriptText.toLowerCase().includes(keyword.toLowerCase())) {
+        topics.push(keyword);
+      }
+    });
+  }
+  
+  return {
+    name: bot.bot_name,
+    meetingUrl: bot.meeting_url,
+    meetingType: bot.extra?.meetingType,
+    createdAt: bot.created_at,
+    creator: bot.creator_email,
+    participants: bot.extra?.participants,
+    topics: topics.length > 0 ? topics : undefined,
+    extra: bot.extra
+  };
 }
