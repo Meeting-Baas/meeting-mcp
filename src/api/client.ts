@@ -9,7 +9,7 @@ import { API_BASE_URL } from "../config.js";
 /**
  * Session type definition
  */
-type SessionAuth = { apiKey: string };
+export type SessionAuth = { apiKey: string };
 
 /**
  * Makes a request to the MeetingBaaS API
@@ -81,5 +81,33 @@ export async function apiRequest(
     const err = error instanceof Error ? error : new Error(String(error));
     console.error(`[API Client] Request error: ${err.message}`);
     throw new UserError(`Request error: ${err.message}`);
+  }
+}
+
+/**
+ * Client for the MeetingBaaS API
+ */
+export class MeetingBaasClient {
+  private apiKey: string;
+  
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+  
+  /**
+   * Join a meeting with a bot
+   */
+  async joinMeeting(params: {
+    meeting_url: string;
+    bot_name: string | null;
+    bot_image?: string | null;
+    entry_message?: string | null;
+    reserved?: boolean;
+    recording_mode?: string;
+    start_time?: string;
+    extra?: Record<string, unknown>;
+  }) {
+    const session: SessionAuth = { apiKey: this.apiKey };
+    return apiRequest(session, 'post', '/bots/', params);
   }
 }

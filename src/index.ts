@@ -59,13 +59,43 @@ async function loadClaudeDesktopConfig() {
         
         // Check for meetingbaas server config
         if (configJson.mcpServers && configJson.mcpServers.meetingbaas) {
+          const serverConfig = configJson.mcpServers.meetingbaas;
+          
           // Check for headers
-          if (configJson.mcpServers.meetingbaas.headers) {
+          if (serverConfig.headers) {
             // Check for API key header and set it as an environment variable
-            if (configJson.mcpServers.meetingbaas.headers['x-api-key']) {
-              const apiKey = configJson.mcpServers.meetingbaas.headers['x-api-key'];
+            if (serverConfig.headers['x-api-key']) {
+              const apiKey = serverConfig.headers['x-api-key'];
               process.env.MEETING_BAAS_API_KEY = apiKey;
               serverLog(`API key loaded from config`);
+            }
+          }
+          
+          // Check for bot configuration
+          if (serverConfig.botConfig) {
+            const botConfig = serverConfig.botConfig;
+            let configItems = [];
+            
+            // Set bot name if available
+            if (botConfig.name) {
+              process.env.MEETING_BOT_NAME = botConfig.name;
+              configItems.push("name");
+            }
+            
+            // Set bot image if available
+            if (botConfig.image) {
+              process.env.MEETING_BOT_IMAGE = botConfig.image;
+              configItems.push("image");
+            }
+            
+            // Set bot entry message if available
+            if (botConfig.entryMessage) {
+              process.env.MEETING_BOT_ENTRY_MESSAGE = botConfig.entryMessage;
+              configItems.push("message");
+            }
+            
+            if (configItems.length > 0) {
+              serverLog(`Bot configuration loaded from config: ${configItems.join(", ")}`);
             }
           }
         }
