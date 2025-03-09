@@ -26,8 +26,8 @@ const joinMeetingParams = z.object({
   botName: z.string().describe("Name to display for the bot in the meeting"),
   reserved: z
     .boolean()
-    .default(true)
-    .describe("Whether to use a dedicated bot"),
+    .default(false)
+    .describe("Whether to use a bot from the pool of bots or a new one (new ones are created on the fly and instances can take up to 4 minutes to boot"),
   startTime: z
     .number()
     .optional()
@@ -55,8 +55,40 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
   parameters: joinMeetingParams,
   execute: async (args, context) => {
     const { session, log } = context;
-    log.info("Joining meeting", { url: args.meetingUrl });
-
+    
+    // Basic logging
+    log.info("Joining meeting", { 
+      url: args.meetingUrl,
+      botName: args.botName
+    });
+    
+    // Using type assertion for flexibility with context structure
+    const anyContext = context as any;
+    
+    // Get API key from session or environment variable
+    let apiKey = session?.apiKey;
+    
+    // If not available in session, check environment variable
+    if (!apiKey && process.env.MEETING_BAAS_API_KEY) {
+      apiKey = process.env.MEETING_BAAS_API_KEY;
+      log.info("Using API key from environment variable");
+    }
+    
+    // Verify we have an API key
+    if (!apiKey) {
+      log.error("Authentication failed - no API key available");
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Authentication failed. Please configure your API key in Claude Desktop settings."
+          }
+        ],
+        isError: true
+      };
+    }
+    
+    // Prepare API request with the meeting details
     const payload = {
       meeting_url: args.meetingUrl,
       bot_name: args.botName,
@@ -66,8 +98,27 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
       extra: {}, // Can be used to add custom data
     };
 
-    const response = await apiRequest(session, "post", "/bots/", payload);
-    return `Bot joined meeting successfully. Bot ID: ${response.bot_id}`;
+    try {
+      // Create a session object with the API key
+      const effectiveSession = { apiKey };
+      
+      const response = await apiRequest(effectiveSession, "post", "/bots/", payload);
+      log.info("Join meeting success", { botId: response.bot_id });
+      return `Bot joined meeting successfully. Bot ID: ${response.bot_id}`;
+    } catch (error) {
+      log.error("Join meeting failed", { error: String(error) });
+      
+      // Return a nicer error message
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to join meeting: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
   },
 };
 
