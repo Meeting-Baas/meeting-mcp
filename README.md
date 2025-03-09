@@ -77,6 +77,13 @@ The server exposes several tools through the MCP protocol:
     - `botImage` (optional URL to an image for the bot's avatar) 
     - `entryMessage` (optional message the bot will send when joining)
     - `deduplicationKey` (optional key to override the 5-minute restriction on joining the same meeting)
+    - `nooneJoinedTimeout` (optional timeout in seconds for bot to leave if no one joins)
+    - `waitingRoomTimeout` (optional timeout in seconds for bot to leave if stuck in waiting room)
+    - `speechToTextProvider` (optional provider for transcription: "Gladia", "Runpod", or "Default")
+    - `speechToTextApiKey` (optional API key for the speech-to-text provider)
+    - `streamingInputUrl` (optional WebSocket URL to stream audio input)
+    - `streamingOutputUrl` (optional WebSocket URL to stream audio output)
+    - `streamingAudioFrequency` (optional frequency for streaming: "16khz" or "24khz")
   - Returns: Bot details including ID and join status
 - `getBots`: Lists all bots and their associated meetings
 - `getBotsByMeeting`: Gets bots for a specific meeting URL
@@ -164,7 +171,11 @@ To integrate with Claude Desktop:
            "name": "Meeting Assistant",
            "image": "https://meetingbaas.com/static/972043b7d604bca0d4b0048c7dd67ad2/fc752/previewFeatures.avif",
            "entryMessage": "Hello, I'm a bot from Meeting Baas. I'll be taking notes for this meeting.",
-           "deduplicationKey": "unique_key_to_override_restriction"
+           "deduplicationKey": "unique_key_to_override_restriction",
+           "nooneJoinedTimeout": 600,
+           "waitingRoomTimeout": 600,
+           "speechToTextProvider": "Gladia",
+           "speechToTextApiKey": "YOUR_SPEECH_TO_TEXT_API_KEY"
          }
        }
      }
@@ -187,6 +198,10 @@ The configuration explained:
   - `image`: URL to a publicly accessible image to use as the bot's avatar (optional)
   - `entryMessage`: Message the bot will send when joining a meeting (optional)
   - `deduplicationKey`: A unique key to override the 5-minute restriction on joining the same meeting (optional)
+  - `nooneJoinedTimeout`: Timeout in seconds for the bot to leave if no participants join (optional)
+  - `waitingRoomTimeout`: Timeout in seconds for the bot to leave if stuck in waiting room (optional)
+  - `speechToTextProvider`: Provider to use for transcription ("Gladia", "Runpod", "Default") (optional)
+  - `speechToTextApiKey`: API key for the speech-to-text provider if required (optional)
 
 ## Integration with Cursor
 
