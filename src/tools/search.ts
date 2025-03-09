@@ -11,6 +11,11 @@ import { formatTime } from "../utils/formatters.js";
 // Define our session auth type
 type SessionAuth = { apiKey: string };
 
+// Update the SessionAuth interface to include recentBotIds
+interface ExtendedSessionAuth extends SessionAuth {
+  recentBotIds?: string[];
+}
+
 // Define the parameters schema
 const searchTranscriptParams = z.object({
   botId: z.string().uuid().describe("ID of the bot that recorded the meeting"),
@@ -65,6 +70,19 @@ interface ExtendedTranscript extends Transcript {
   meeting_url?: string;
   bot_id?: string;
   meeting_type?: string;
+}
+
+// Define interfaces for the calendar event data structure
+interface CalendarEvent {
+  name: string;
+  uuid: string;
+  start_time: string;
+  bot_param: {
+    uuid?: string;
+    extra?: {
+      meetingType?: string;
+    };
+  } | null;
 }
 
 /**
@@ -403,14 +421,16 @@ export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
 
 /**
  * Intelligent adaptive search across all meeting data
- * This tool dynamically adjusts its search strategy based on the query and available metadata
+ * This tool dynamically adjusts its search strategy based on the query and available context
  */
 export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
   name: "intelligentSearch",
-  description: "Performs an intelligent search across all meeting data, adapting to the query and available context",
+  description: "Performs an intelligent search across meeting data, adapting to the query and available context",
   parameters: intelligentSearchParams,
   execute: async (args, context) => {
     const { session, log } = context;
+    const extendedSession = session as ExtendedSessionAuth;
+    
     log.info("Performing intelligent search", { 
       query: args.query,
       filters: args.filters,
@@ -418,74 +438,86 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
     });
 
     try {
-      // Step 1: Analyze the query to determine the best search strategy
-      const queryLower = args.query.toLowerCase();
-      let searchStrategy = "general";
-      let botId = null;
-      let meetingId = null;
-      let meetingType = null;
-      let topic = null;
-      let speaker = null;
+      // Step 1: First, attempt to determine the search approach based on what information we have
+      
+      // Track what approach we're using
+      let searchApproach = "unknown";
+      let botId: string | null = null;
+      let calendarId: string | null = null;
+      let meetingType: string | null = null;
+      let speaker: string | null = null;
       let timeRange = { startTime: undefined as number | undefined, endTime: undefined as number | undefined };
       
-      // Extract filters from the query or from explicitly provided filters
-      const extractedFilters: Record<string, any> = { ...args.filters };
-      
-      // Check for meeting ID/bot ID patterns
-      const idMatch = queryLower.match(/meeting\s+(id|uuid|bot)[\s:]+([a-f0-9-]{8,})/i);
-      if (idMatch) {
-        botId = idMatch[2];
-        meetingId = idMatch[2];
-        searchStrategy = "specific-meeting";
-        log.info(`Detected specific meeting search with ID: ${botId}`);
+      // Extract potential bot ID from query or filters
+      const botIdMatch = args.query.match(/(?:meeting|bot)(?:\s+id|\s+uuid)?[\s:]+([a-f0-9-]{8,})/i);
+      if (botIdMatch && botIdMatch[1]) {
+        botId = botIdMatch[1];
+        searchApproach = "bot-id";
+        log.info(`Found bot ID in query: ${botId}`);
+      } else if (args.filters?.botId) {
+        botId = args.filters.botId;
+        searchApproach = "bot-id";
+        log.info(`Using bot ID from filters: ${botId}`);
       }
       
-      // Check for meeting type patterns
-      const meetingTypePatterns = [
-        { regex: /sales\s+meeting/i, type: "sales" },
-        { regex: /psychiatric|therapy|mental\s+health/i, type: "psychiatric" },
-        { regex: /standup|scrum|daily/i, type: "standup" },
-        { regex: /interview/i, type: "interview" },
-        { regex: /product/i, type: "product" },
-        { regex: /planning/i, type: "planning" }
-      ];
+      // Check if we have a calendar ID 
+      if (args.filters?.calendarId) {
+        calendarId = args.filters.calendarId;
+        searchApproach = "calendar";
+        log.info(`Using calendar ID from filters: ${calendarId}`);
+      }
+      
+      // Check for recent session bots if we don't have a specific bot ID
+      if (!botId && !calendarId && extendedSession?.recentBotIds && Array.isArray(extendedSession.recentBotIds) && extendedSession.recentBotIds.length > 0) {
+        log.info(`Using recent bots from session: ${extendedSession.recentBotIds.join(', ')}`);
+        searchApproach = "recent-bots";
+      }
+      
+      // Extract other potential filters
+      if (args.filters?.meetingType) {
+        meetingType = args.filters.meetingType;
+        log.info(`Using meeting type from filters: ${meetingType}`);
+      } else {
+        // Try to extract meeting type from query
+        const meetingTypePatterns = [
+          { regex: /sales\s+meeting/i, type: "sales" },
+          { regex: /psychiatric|therapy|mental\s+health/i, type: "psychiatric" },
+          { regex: /standup|scrum|daily/i, type: "standup" },
+          { regex: /interview/i, type: "interview" },
+          { regex: /product/i, type: "product" },
+          { regex: /planning/i, type: "planning" }
+        ];
 
-      for (const pattern of meetingTypePatterns) {
-        if (pattern.regex.test(queryLower)) {
-          meetingType = pattern.type;
-          searchStrategy = "meeting-type";
-          log.info(`Detected meeting type search for: ${meetingType}`);
-          break;
-        }
-      }
-      
-      // Check for topic search patterns
-      const topicPatterns = [
-        /(?:about|discuss|discussion|mention|talk about|cover)\s+([a-z\s]{3,}?)(?:\s+in|\s+during|\s+at|\?|$)/i,
-        /(?:find|search for)\s+([a-z\s]{3,}?)(?:\s+in|\s+during|\s+at|\?|$)/i
-      ];
-      
-      for (const pattern of topicPatterns) {
-        const match = queryLower.match(pattern);
-        if (match && match[1]) {
-          topic = match[1].trim();
-          if (botId || meetingId) {
-            searchStrategy = "meeting-topic";
-            log.info(`Detected topic search within specific meeting. Topic: ${topic}`);
+        for (const pattern of meetingTypePatterns) {
+          if (pattern.regex.test(args.query)) {
+            meetingType = pattern.type;
+            log.info(`Extracted meeting type from query: ${meetingType}`);
+            break;
           }
-          break;
         }
       }
       
-      // Check for speaker-specific patterns
-      const speakerMatch = queryLower.match(/(?:where|when|what)\s+(?:did|does|was)\s+([a-z]+)(?:\s+[a-z]+)?\s+(?:say|talk|speak|mention)/i);
-      if (speakerMatch) {
-        speaker = speakerMatch[1];
-        searchStrategy = speaker && (botId || meetingId) ? "video-segment" : searchStrategy;
-        log.info(`Detected speaker filter: ${speaker}`);
+      if (args.filters?.speaker) {
+        speaker = args.filters.speaker;
+      } else {
+        // Try to extract speaker from query
+        const speakerMatch = args.query.match(/(?:where|when|what)\s+(?:did|does|was)\s+([a-z]+)(?:\s+[a-z]+)?\s+(?:say|talk|speak|mention)/i);
+        if (speakerMatch) {
+          speaker = speakerMatch[1];
+          log.info(`Extracted speaker from query: ${speaker}`);
+        }
       }
       
-      // Check for time range patterns
+      // Extract time filters if specified
+      if (args.filters?.startTime !== undefined) {
+        timeRange.startTime = args.filters.startTime;
+      }
+      
+      if (args.filters?.endTime !== undefined) {
+        timeRange.endTime = args.filters.endTime;
+      }
+      
+      // Try to extract time ranges from query
       const timePatterns = [
         { regex: /between\s+(\d+)(?::(\d+))?\s+(?:and|to)\s+(\d+)(?::(\d+))?/i, type: "range" },
         { regex: /after\s+(\d+)(?::(\d+))?/i, type: "after" },
@@ -494,61 +526,30 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
       ];
       
       for (const pattern of timePatterns) {
-        const match = queryLower.match(pattern.regex);
+        const match = args.query.match(pattern.regex);
         if (match) {
           if (pattern.type === "range" && match[1] && match[3]) {
             const startMinutes = parseInt(match[1]) * 60 + (match[2] ? parseInt(match[2]) : 0);
             const endMinutes = parseInt(match[3]) * 60 + (match[4] ? parseInt(match[4]) : 0);
             timeRange.startTime = startMinutes;
             timeRange.endTime = endMinutes;
-            searchStrategy = "video-segment";
           } else if (pattern.type === "after" && match[1]) {
             const minutes = parseInt(match[1]) * 60 + (match[2] ? parseInt(match[2]) : 0);
             timeRange.startTime = minutes;
-            searchStrategy = "video-segment";
           } else if (pattern.type === "before" && match[1]) {
             const minutes = parseInt(match[1]) * 60 + (match[2] ? parseInt(match[2]) : 0);
             timeRange.endTime = minutes;
-            searchStrategy = "video-segment";
           } else if (pattern.type === "around" && match[1]) {
             const minutes = parseInt(match[1]) * 60 + (match[2] ? parseInt(match[2]) : 0);
             timeRange.startTime = Math.max(0, minutes - 60); // 1 minute before
             timeRange.endTime = minutes + 60; // 1 minute after
-            searchStrategy = "video-segment";
           }
-          log.info(`Detected time range: ${JSON.stringify(timeRange)}`);
+          log.info(`Extracted time range: ${JSON.stringify(timeRange)}`);
           break;
         }
       }
       
-      // Use the filters if explicitly provided
-      if (extractedFilters.meetingType && !meetingType) {
-        meetingType = extractedFilters.meetingType;
-        searchStrategy = "meeting-type";
-      }
-      
-      if (extractedFilters.botId && !botId) {
-        botId = extractedFilters.botId;
-        searchStrategy = botId ? "specific-meeting" : searchStrategy;
-      }
-      
-      if (extractedFilters.speaker && !speaker) {
-        speaker = extractedFilters.speaker;
-      }
-      
-      if (extractedFilters.startTime !== undefined && timeRange.startTime === undefined) {
-        timeRange.startTime = extractedFilters.startTime;
-        searchStrategy = botId ? "video-segment" : searchStrategy;
-      }
-      
-      if (extractedFilters.endTime !== undefined && timeRange.endTime === undefined) {
-        timeRange.endTime = extractedFilters.endTime;
-        searchStrategy = botId ? "video-segment" : searchStrategy;
-      }
-      
-      // Step 2: Execute the appropriate search strategy by delegating to specialized search tools
-      
-      // Extract core search terms (removing filter-related phrases)
+      // Extract the core search terms (removing filter-related phrases)
       let searchTerms = args.query
         .replace(/in\s+(sales|psychiatric|standup|interview|product|planning)\s+meetings?/gi, '')
         .replace(/from\s+yesterday|last\s+(week|day|month)|this\s+(month|quarter)/gi, '')
@@ -563,95 +564,208 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         searchTerms = args.query;
       }
       
-      log.info(`Search strategy: ${searchStrategy}, Search terms: ${searchTerms}`);
+      log.info(`Search terms after filtering: ${searchTerms}`);
+      log.info(`Search approach: ${searchApproach}`);
+
+      // Step 2: Execute search based on available information
       
-      // Execute the appropriate search based on detected strategy
-      switch (searchStrategy) {
-        case "specific-meeting":
-          if (topic) {
-            // Use findMeetingTopic if we have a specific topic to search within a meeting
-            return await findMeetingTopicTool.execute({
-              meetingId: meetingId || botId,
-              topic: topic || searchTerms
-            }, context);
-          } else if (timeRange.startTime !== undefined || timeRange.endTime !== undefined || speaker) {
-            // Use searchVideoSegment if we're looking for specific segments by time or speaker
-            return await searchVideoSegmentTool.execute({
-              botId: botId,
-              startTime: timeRange.startTime,
-              endTime: timeRange.endTime,
-              speaker: speaker
-            }, context);
-          } else {
-            // Default to simple transcript search for a specific meeting
-            return await searchTranscriptTool.execute({
-              botId: botId,
-              query: searchTerms
-            }, context);
-          }
-          
-        case "meeting-type":
-          // Use searchTranscriptByType if we're searching across a specific meeting type
-          return await searchTranscriptByTypeTool.execute({
-            meetingType: meetingType,
-            query: searchTerms,
-            limit: args.maxResults || 10
+      // Approach 1: Direct Bot ID search - most straightforward approach
+      if (searchApproach === "bot-id" && botId) {
+        log.info(`Searching specific bot with ID: ${botId}`);
+        
+        // Decide which search tool to use based on additional parameters
+        if (speaker || (timeRange.startTime !== undefined || timeRange.endTime !== undefined)) {
+          // Use video segment search for time/speaker filtering
+          return await searchVideoSegmentTool.execute({
+            botId: botId,
+            startTime: timeRange.startTime,
+            endTime: timeRange.endTime,
+            speaker: speaker || undefined
+          }, context);
+        } else {
+          // Use standard transcript search
+          const result = await searchTranscriptTool.execute({
+            botId: botId,
+            query: searchTerms
           }, context);
           
-        case "meeting-topic":
-          // Already handled in the specific-meeting case
-          break;
+          // Update session with the recently used bot ID
+          updateRecentBots(extendedSession, botId);
           
-        case "video-segment":
-          // Already handled in the specific-meeting case
-          break;
-          
-        case "general":
-        default:
-          // For general searches, we need to find relevant bots first
-          const botsResponse = await apiRequest(
+          return result;
+        }
+      }
+      
+      // Approach 2: Calendar-based search
+      if (searchApproach === "calendar" && calendarId) {
+        log.info(`Searching calendar events for calendar ID: ${calendarId}`);
+        
+        try {
+          // Get calendar events
+          const eventsResponse = await apiRequest(
             session,
             "get",
-            `/bots/`
+            `/calendar_events/?calendar_id=${calendarId}`
           );
           
-          if (!botsResponse || !Array.isArray(botsResponse) || botsResponse.length === 0) {
-            return "No meeting recordings found to search.";
+          if (!eventsResponse || !eventsResponse.data || !Array.isArray(eventsResponse.data)) {
+            return "No calendar events found for the specified calendar.";
           }
           
-          // For a general search, let's try each bot until we find relevant results
-          // This simulates searching across all meetings but leverages the specialized tools
-          for (const bot of botsResponse.slice(0, Math.min(5, botsResponse.length))) {
-            try {
-              const result = await searchTranscriptTool.execute({
-                botId: bot.uuid,
-                query: searchTerms
-              }, context);
-              
-              // If we got meaningful results (not just "No results found"), return them
-              if (typeof result === 'string' && !result.startsWith("No results found")) {
-                // Add meeting info to the results
-                return `MEETING INFO:
-Bot Name: ${bot.bot_name || 'Unnamed Bot'}
-Meeting URL: ${bot.meeting_url || 'Unknown'}
-Meeting Type: ${bot.extra?.meetingType || 'Unknown'}
-Date: ${new Date(bot.created_at).toLocaleString()}
-${bot.creator_email ? `Creator: ${bot.creator_email}` : ''}
-
-SEARCH RESULTS:
-${result}`;
-              }
-            } catch (error) {
-              // Just log and continue if one bot fails
-              log.error(`Error searching bot ${bot.uuid}`, { error: String(error) });
+          // Filter events with bot parameters (these are the ones that have recordings)
+          const eventsWithBots = eventsResponse.data.filter((event: CalendarEvent) => event.bot_param !== null);
+          
+          if (eventsWithBots.length === 0) {
+            return "No recorded meetings found in this calendar.";
+          }
+          
+          // Filter by meeting type if specified
+          let filteredEvents = eventsWithBots;
+          if (meetingType) {
+            filteredEvents = filteredEvents.filter((event: CalendarEvent) => {
+              return event.bot_param?.extra?.meetingType === meetingType;
+            });
+            
+            if (filteredEvents.length === 0) {
+              return `No ${meetingType} meetings found in this calendar.`;
             }
           }
           
-          return "No relevant results found across any meetings. Try refining your search terms or specifying a particular meeting.";
+          // For each event with a bot, try to get the bot ID and search
+          let matchingResults = [];
+          let numEventsSearched = 0;
+          
+          for (const event of filteredEvents.slice(0, 5)) { // Limit to 5 events to prevent too many API calls
+            try {
+              // Check if the event has the bot_id directly
+              let eventBotId: string | undefined = undefined;
+              
+              // Try to get the bot UUID from the event data
+              if (event.bot_param && event.bot_param.uuid) {
+                eventBotId = event.bot_param.uuid;
+              }
+              
+              if (!eventBotId) {
+                // Without a bot ID, we can't search the transcript
+                continue;
+              }
+              
+              numEventsSearched++;
+              
+              // Use the same search logic as for direct bot ID
+              const result = await searchTranscriptTool.execute({
+                botId: eventBotId,
+                query: searchTerms
+              }, context);
+              
+              // If we got a meaningful result, add it to our results
+              if (typeof result === 'string' && !result.startsWith("No results found")) {
+                matchingResults.push({
+                  event: event,
+                  botId: eventBotId,
+                  result: result
+                });
+                
+                // Update session with the bot ID
+                updateRecentBots(extendedSession, eventBotId);
+              }
+            } catch (error) {
+              log.error(`Error searching event ${event.uuid}`, { error: String(error) });
+              // Continue with other events
+            }
+          }
+          
+          if (matchingResults.length === 0) {
+            return `Searched ${numEventsSearched} calendar events but found no matches for "${searchTerms}".`;
+          }
+          
+          // Format the results
+          let responseText = `Found matches in ${matchingResults.length} calendar events:\n\n`;
+          
+          matchingResults.forEach((match, index) => {
+            const event: CalendarEvent = match.event;
+            const eventName = event.name;
+            const eventDate = new Date(event.start_time).toLocaleString();
+            
+            responseText += `--- MEETING ${index + 1}: ${eventName} (${eventDate}) ---\n`;
+            responseText += match.result;
+            responseText += "\n\n";
+          });
+          
+          return responseText;
+        } catch (error) {
+          log.error(`Error searching calendar events`, { error: String(error) });
+          return `Error searching calendar events: ${error instanceof Error ? error.message : String(error)}`;
+        }
       }
       
-      // Fallback message if we somehow miss all cases
-      return "Unable to determine the best search strategy for your query. Please try being more specific.";
+      // Approach 3: Search recent bots from session
+      if (searchApproach === "recent-bots" && extendedSession?.recentBotIds && extendedSession.recentBotIds.length > 0) {
+        log.info(`Searching recent bots from session: ${extendedSession.recentBotIds.join(', ')}`);
+        
+        let matchingResults = [];
+        
+        // Try each recent bot
+        for (const recentBotId of extendedSession.recentBotIds) {
+          try {
+            const result = await searchTranscriptTool.execute({
+              botId: recentBotId,
+              query: searchTerms
+            }, context);
+            
+            // If we got a meaningful result, add it to our results
+            if (typeof result === 'string' && !result.startsWith("No results found")) {
+              // Get bot details to add context
+              try {
+                const botData = await apiRequest(
+                  session,
+                  "get",
+                  `/bots/meeting_data?bot_id=${recentBotId}`
+                );
+                
+                matchingResults.push({
+                  botId: recentBotId,
+                  botName: botData.bot_data.bot.bot_name || 'Unnamed Bot',
+                  meetingUrl: botData.bot_data.bot.meeting_url || 'Unknown URL',
+                  meetingType: botData.bot_data.bot.extra?.meetingType || 'Unknown Type',
+                  result: result
+                });
+              } catch (botError) {
+                // If we can't get bot details, just add the results without context
+                matchingResults.push({
+                  botId: recentBotId,
+                  result: result
+                });
+              }
+            }
+          } catch (error) {
+            log.error(`Error searching recent bot ${recentBotId}`, { error: String(error) });
+            // Continue with other bots
+          }
+        }
+        
+        if (matchingResults.length === 0) {
+          return `Searched your recent meetings but found no matches for "${searchTerms}".`;
+        }
+        
+        // Format the results
+        let responseText = `Found matches in ${matchingResults.length} recent meetings:\n\n`;
+        
+        matchingResults.forEach((match, index) => {
+          responseText += `--- MEETING ${index + 1} ---\n`;
+          if (match.botName) responseText += `Meeting: ${match.botName}\n`;
+          if (match.meetingType) responseText += `Type: ${match.meetingType}\n`;
+          if (match.meetingUrl) responseText += `URL: ${match.meetingUrl}\n\n`;
+          
+          responseText += match.result;
+          responseText += "\n\n";
+        });
+        
+        return responseText;
+      }
+      
+      // Fallback if no approach worked or was identified
+      return "To search meeting content, please provide either a bot ID, a calendar ID, or ensure you've recently used the tool with specific meetings. You can specify the bot ID directly in your query or use filters.";
       
     } catch (error) {
       log.error("Error in intelligent search", { error: String(error) });
@@ -659,3 +773,21 @@ ${result}`;
     }
   },
 };
+
+// Helper function to update the session with recently used bot IDs
+function updateRecentBots(session: ExtendedSessionAuth, botId: string) {
+  if (!session.recentBotIds) {
+    session.recentBotIds = [];
+  }
+  
+  // Remove this bot ID if it already exists in the list
+  session.recentBotIds = session.recentBotIds.filter(id => id !== botId);
+  
+  // Add this bot ID to the front of the list
+  session.recentBotIds.unshift(botId);
+  
+  // Keep only the 5 most recent bot IDs
+  if (session.recentBotIds.length > 5) {
+    session.recentBotIds = session.recentBotIds.slice(0, 5);
+  }
+}
