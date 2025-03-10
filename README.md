@@ -187,6 +187,31 @@ The server exposes several tools through the MCP protocol:
     - `https://meetingbaas.com/viewer/{BOT_ID}?t={TIMESTAMP_SECONDS}`
 - `getTranscriptSummary`: Gets an AI-generated summary of meeting content
 
+### Link Sharing Tools
+
+- `shareableMeetingLink`: Generates a nicely formatted, shareable link to a meeting recording
+  - Parameters: `botId`, plus optional `timestamp`, `title`, `speakerName`, and `description`
+  - Returns: Markdown-formatted link with metadata that can be shared directly in chat
+  - Example: 
+    ```
+    📽️ **Meeting Recording: Weekly Team Sync**
+    ⏱️ Timestamp: 00:12:35
+    🎤 Speaker: Sarah Johnson
+    📝 Discussing the new product roadmap
+
+    🔗 [View Recording](https://meetingbaas.com/viewer/abc123?t=755)
+    ```
+
+- `shareMeetingSegments`: Creates a list of links to multiple important moments in a meeting
+  - Parameters: `botId` and an array of `segments` with timestamps, speakers, and descriptions
+  - Returns: Markdown-formatted list of segments with direct links to each moment
+  - Useful for creating a table of contents for a long meeting
+
+- `findKeyMoments`: Automatically identifies and shares links to important moments in a meeting
+  - Parameters: `botId`, optional `meetingTitle`, optional list of `topics` to look for, and optional `maxMoments`
+  - Returns: Markdown-formatted list of key moments with links, automatically detected based on transcript
+  - Uses AI-powered analysis to find significant moments without requiring manual timestamp selection
+
 ## Example Workflows
 
 ### Recording a Meeting
@@ -362,6 +387,14 @@ This approach eliminates the need to manually call the OAuth setup tools, making
    "Find when we discussed the marketing budget and give me a shareable link to that moment"
    "Create a link to the part of yesterday's meeting where Sarah presented the Q4 roadmap"
    "Share the segment of the design review where we debated the user interface changes"
+   ```
+
+11. Use AI to find and share key moments from a meeting:
+   ```
+   "Find key moments in our last product planning meeting and share links to them"
+   "Create a table of contents with links for the quarterly review meeting"
+   "Share the parts of the interview where the candidate discussed their experience with React"
+   "Automatically find and share important moments from meeting abc-123"
    ```
 
 ### Using Direct Credential Tools

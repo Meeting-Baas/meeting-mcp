@@ -36,7 +36,10 @@ import {
   cancelRecordingTool,
   cancelRecordingWithCredentialsTool,
   oauthGuidanceTool,
-  checkCalendarIntegrationTool
+  checkCalendarIntegrationTool,
+  shareableMeetingLinkTool,
+  shareMeetingSegmentsTool,
+  findKeyMomentsTool
 } from "./tools/index.js";
 
 // Import resources
@@ -214,6 +217,9 @@ async function loadClaudeDesktopConfig() {
   server.addTool(cancelRecordingWithCredentialsTool);
   server.addTool(oauthGuidanceTool);
   server.addTool(checkCalendarIntegrationTool);
+  server.addTool(shareableMeetingLinkTool);
+  server.addTool(shareMeetingSegmentsTool);
+  server.addTool(findKeyMomentsTool);
   
   // Register resources
   server.addResourceTemplate(meetingTranscriptResource);
