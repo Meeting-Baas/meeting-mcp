@@ -92,49 +92,71 @@ interface CalendarEvent {
  */
 export const searchTranscriptTool: Tool<typeof searchTranscriptParams> = {
   name: "searchTranscript",
-  description: "Search through meeting transcripts for specific content",
+  description: "Search through a meeting transcript for specific terms",
   parameters: searchTranscriptParams,
   execute: async (args, context) => {
     const { session, log } = context;
     const extendedSession = session as ExtendedSessionAuth;
+    
     log.info("Searching transcripts", { botId: args.botId, query: args.query });
 
-    const response = await apiRequest(
-      session,
-      "get",
-      `/bots/meeting_data?bot_id=${args.botId}`
-    );
-
-    // Track this bot in our TinyDB
-    const metadata = extractBotMetadata(response);
-    updateRecentBots(extendedSession, args.botId, metadata);
-
-    const transcripts: Transcript[] = response.bot_data.transcripts;
-    const results = transcripts.filter((transcript: Transcript) => {
-      const text = transcript.words
-        .map((word: { text: string }) => word.text)
-        .join(" ");
-      return text.toLowerCase().includes(args.query.toLowerCase());
-    });
-
-    if (results.length === 0) {
-      return `No results found for "${args.query}"`;
+    // Create a valid session with fallbacks for API key
+    const validSession = createValidSession(session, log);
+    
+    // Check if we have a valid session with API key
+    if (!validSession) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+          }
+        ],
+        isError: true
+      };
     }
 
-    // Format the results
-    const formattedResults = results
-      .map((transcript: Transcript) => {
+    try {
+      const response = await apiRequest(
+        validSession,
+        "get",
+        `/bots/meeting_data?bot_id=${args.botId}`
+      );
+
+      // Track this bot in our TinyDB
+      const metadata = extractBotMetadata(response);
+      updateRecentBots(extendedSession, args.botId, metadata);
+
+      const transcripts: Transcript[] = response.bot_data.transcripts;
+      const results = transcripts.filter((transcript: Transcript) => {
         const text = transcript.words
           .map((word: { text: string }) => word.text)
           .join(" ");
-        const startTime = formatTime(transcript.start_time);
-        const speaker = transcript.speaker;
+        return text.toLowerCase().includes(args.query.toLowerCase());
+      });
 
-        return `[${startTime}] ${speaker}: ${text}`;
-      })
-      .join("\n\n");
+      if (results.length === 0) {
+        return `No results found for "${args.query}"`;
+      }
 
-    return `Found ${results.length} results for "${args.query}":\n\n${formattedResults}`;
+      // Format the results
+      const formattedResults = results
+        .map((transcript: Transcript) => {
+          const text = transcript.words
+            .map((word: { text: string }) => word.text)
+            .join(" ");
+          const startTime = formatTime(transcript.start_time);
+          const speaker = transcript.speaker;
+
+          return `[${startTime}] ${speaker}: ${text}`;
+        })
+        .join("\n\n");
+
+      return `Found ${results.length} results for "${args.query}":\n\n${formattedResults}`;
+    } catch (error) {
+      log.error(`Error searching transcripts`, { error: String(error) });
+      return `Error searching transcripts: ${error instanceof Error ? error.message : String(error)}`;
+    }
   },
 };
 
@@ -149,94 +171,112 @@ export const searchTranscriptByTypeTool: Tool<typeof searchTranscriptByTypeParam
   execute: async (args, context) => {
     const { session, log } = context;
     const extendedSession = session as ExtendedSessionAuth;
-    log.info("Searching transcripts by type", { 
-      meetingType: args.meetingType, 
-      query: args.query, 
-      limit: args.limit 
-    });
-
-    // First, get list of all bots
-    const botsResponse = await apiRequest(
-      session,
-      "get",
-      `/bots/`
-    );
-
-    // Filter bots by meeting type using the 'extra' field
-    const filteredBots = botsResponse.filter((bot: any) => {
-      return bot.extra && 
-             bot.extra.meetingType && 
-             bot.extra.meetingType.toLowerCase() === args.meetingType.toLowerCase();
-    });
-
-    if (filteredBots.length === 0) {
-      return `No meetings found with type "${args.meetingType}"`;
-    }
-
-    // Search each matching bot's transcripts
-    let allResults: any[] = [];
-    for (const bot of filteredBots.slice(0, args.limit)) {
-      try {
-        const response = await apiRequest(
-          session,
-          "get",
-          `/bots/meeting_data?bot_id=${bot.uuid}`
-        );
-
-        // Track this bot in our TinyDB
-        const metadata = extractBotMetadata(response);
-        updateRecentBots(extendedSession, bot.uuid, metadata);
-
-        if (response.bot_data && response.bot_data.transcripts) {
-          const transcripts: Transcript[] = response.bot_data.transcripts;
-          const results = transcripts.filter((transcript: Transcript) => {
-            const text = transcript.words
-              .map((word: { text: string }) => word.text)
-              .join(" ");
-            return text.toLowerCase().includes(args.query.toLowerCase());
-          }).map(transcript => {
-            return {
-              ...transcript,
-              bot_name: response.bot_data.bot.bot_name,
-              meeting_url: response.bot_data.bot.meeting_url,
-              bot_id: bot.uuid,
-              meeting_type: args.meetingType
-            };
-          });
-          
-          allResults = [...allResults, ...results];
-        }
-      } catch (error) {
-        log.error(`Error searching bot ${bot.uuid}`, { error: String(error) });
-        // Continue with other bots even if one fails
-      }
-    }
-
-    // Sort results by start_time
-    allResults.sort((a, b) => a.start_time - b.start_time);
     
-    // Limit results
-    allResults = allResults.slice(0, args.limit);
+    log.info("Searching transcripts by type", { meetingType: args.meetingType, query: args.query });
 
-    if (allResults.length === 0) {
-      return `No results found for "${args.query}" in "${args.meetingType}" meetings`;
+    // Create a valid session with fallbacks for API key
+    const validSession = createValidSession(session, log);
+    
+    // Check if we have a valid session with API key
+    if (!validSession) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+          }
+        ],
+        isError: true
+      };
     }
 
-    // Format the results
-    const formattedResults = allResults
-      .map((result) => {
-        const text = result.words
-          .map((word: { text: string }) => word.text)
-          .join(" ");
-        const startTime = formatTime(result.start_time);
-        const speaker = result.speaker;
-        const botName = result.bot_name;
+    try {
+      // First, get list of all bots
+      const botsResponse = await apiRequest(
+        validSession,
+        "get",
+        "/bots/all?limit=100&offset=0"
+      );
 
-        return `Bot: ${botName}\n[${startTime}] ${speaker}: ${text}\nView full meeting: ${result.meeting_url}`;
-      })
-      .join("\n\n");
+      // Filter bots by meeting type using the 'extra' field
+      const filteredBots = botsResponse.filter((bot: any) => {
+        return bot.extra && 
+               bot.extra.meetingType && 
+               bot.extra.meetingType.toLowerCase() === args.meetingType.toLowerCase();
+      });
 
-    return `Found ${allResults.length} results for "${args.query}" in "${args.meetingType}" meetings:\n\n${formattedResults}`;
+      if (filteredBots.length === 0) {
+        return `No meetings found with type "${args.meetingType}"`;
+      }
+
+      // Search each matching bot's transcripts
+      let allResults: any[] = [];
+      for (const bot of filteredBots.slice(0, args.limit)) {
+        try {
+          const response = await apiRequest(
+            session,
+            "get",
+            `/bots/meeting_data?bot_id=${bot.uuid}`
+          );
+
+          // Track this bot in our TinyDB
+          const metadata = extractBotMetadata(response);
+          updateRecentBots(extendedSession, bot.uuid, metadata);
+
+          if (response.bot_data && response.bot_data.transcripts) {
+            const transcripts: Transcript[] = response.bot_data.transcripts;
+            const results = transcripts.filter((transcript: Transcript) => {
+              const text = transcript.words
+                .map((word: { text: string }) => word.text)
+                .join(" ");
+              return text.toLowerCase().includes(args.query.toLowerCase());
+            }).map(transcript => {
+              return {
+                ...transcript,
+                bot_name: response.bot_data.bot.bot_name,
+                meeting_url: response.bot_data.bot.meeting_url,
+                bot_id: bot.uuid,
+                meeting_type: args.meetingType
+              };
+            });
+            
+            allResults = [...allResults, ...results];
+          }
+        } catch (error) {
+          log.error(`Error searching bot ${bot.uuid}`, { error: String(error) });
+          // Continue with other bots even if one fails
+        }
+      }
+
+      // Sort results by start_time
+      allResults.sort((a, b) => a.start_time - b.start_time);
+      
+      // Limit results
+      allResults = allResults.slice(0, args.limit);
+
+      if (allResults.length === 0) {
+        return `No results found for "${args.query}" in "${args.meetingType}" meetings`;
+      }
+
+      // Format the results
+      const formattedResults = allResults
+        .map((result) => {
+          const text = result.words
+            .map((word: { text: string }) => word.text)
+            .join(" ");
+          const startTime = formatTime(result.start_time);
+          const speaker = result.speaker;
+          const botName = result.bot_name;
+
+          return `Bot: ${botName}\n[${startTime}] ${speaker}: ${text}\nView full meeting: ${result.meeting_url}`;
+        })
+        .join("\n\n");
+
+      return `Found ${allResults.length} results for "${args.query}" in "${args.meetingType}" meetings:\n\n${formattedResults}`;
+    } catch (error) {
+      log.error(`Error searching transcripts by type`, { error: String(error) });
+      return `Error searching transcripts by type: ${error instanceof Error ? error.message : String(error)}`;
+    }
   },
 };
 
@@ -252,192 +292,235 @@ export const findMeetingTopicTool: Tool<typeof findMeetingTopicParams> = {
     const extendedSession = session as ExtendedSessionAuth;
     log.info("Finding meeting topic", { meetingId: args.meetingId, topic: args.topic });
 
-    const response = await apiRequest(
-      session,
-      "get",
-      `/bots/meeting_data?meeting_id=${args.meetingId}`
-    );
-
-    // Track this bot in our TinyDB
-    const metadata = extractBotMetadata(response);
-    updateRecentBots(extendedSession, args.meetingId, metadata);
-
-    // Get complete transcript text
-    const transcripts: Transcript[] = response.bot_data.transcripts;
+    // Create a valid session with fallbacks for API key
+    const validSession = createValidSession(session, log);
     
-    // Combine all transcript segments into a single text
-    const fullText = transcripts.map((transcript: Transcript) => {
-      const text = transcript.words
-        .map((word: { text: string }) => word.text)
-        .join(" ");
-      return `[${formatTime(transcript.start_time)}] ${transcript.speaker}: ${text}`;
-    }).join("\n");
-    
-    // Check if the topic is mentioned anywhere
-    if (!fullText.toLowerCase().includes(args.topic.toLowerCase())) {
-      return `Topic "${args.topic}" was not discussed in this meeting.`;
-    }
-    
-    // Find contextual segments that mention the topic
-    const results = transcripts.filter((transcript: Transcript) => {
-      const text = transcript.words
-        .map((word: { text: string }) => word.text)
-        .join(" ");
-      return text.toLowerCase().includes(args.topic.toLowerCase());
-    });
-
-    // Get surrounding context (transcript segments before and after matches)
-    let contextualResults: Transcript[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const resultIndex = transcripts.findIndex(t => t.start_time === results[i].start_time);
-      
-      // Get up to 2 segments before and after the match for context
-      const startIdx = Math.max(0, resultIndex - 2);
-      const endIdx = Math.min(transcripts.length - 1, resultIndex + 2);
-      
-      for (let j = startIdx; j <= endIdx; j++) {
-        if (!contextualResults.includes(transcripts[j])) {
-          contextualResults.push(transcripts[j]);
-        }
-      }
-    }
-    
-    // Sort by start time
-    contextualResults.sort((a, b) => a.start_time - b.start_time);
-    
-    // Format the results with context
-    const formattedResults = contextualResults
-      .map((transcript: Transcript) => {
-        const text = transcript.words
-          .map((word: { text: string }) => word.text)
-          .join(" ");
-        const startTime = formatTime(transcript.start_time);
-        const speaker = transcript.speaker;
-        
-        const highlightedText = text.replace(
-          new RegExp(`(${args.topic})`, "gi"), 
-          "**$1**"
-        );
-
-        return `[${startTime}] ${speaker}: ${highlightedText}`;
-      })
-      .join("\n\n");
-
-    return `Found topic "${args.topic}" in the meeting with context:\n\n${formattedResults}\n\nVideo URL: ${response.mp4}`;
-  },
-};
-
-/**
- * Search for specific video segments using timestamps
- */
-export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
-  name: "searchVideoSegment",
-  description: "Find specific segments of a meeting recording based on time range or speaker",
-  parameters: searchVideoSegmentParams,
-  execute: async (args, context) => {
-    const { session, log } = context;
-    const extendedSession = session as ExtendedSessionAuth;
-    log.info("Searching video segments", { 
-      botId: args.botId, 
-      startTime: args.startTime, 
-      endTime: args.endTime,
-      speaker: args.speaker
-    });
-
-    const response = await apiRequest(
-      session,
-      "get",
-      `/bots/meeting_data?bot_id=${args.botId}`
-    );
-
-    // Track this bot in our TinyDB
-    const metadata = extractBotMetadata(response);
-    updateRecentBots(extendedSession, args.botId, metadata);
-
-    const transcripts: Transcript[] = response.bot_data.transcripts;
-    
-    // Filter transcripts based on parameters
-    let filteredTranscripts = transcripts;
-    
-    // Apply time range filter if provided
-    if (args.startTime !== undefined || args.endTime !== undefined) {
-      filteredTranscripts = filteredTranscripts.filter((transcript: ExtendedTranscript) => {
-        // Calculate approximate end time (start_time + 5 seconds is a reasonable estimate if not available)
-        const endTime = transcript.end_time !== undefined ? transcript.end_time : transcript.start_time + 5;
-        
-        // Check if transcript is within the specified time range
-        if (args.startTime !== undefined && transcript.start_time < args.startTime) {
-          return false;
-        }
-        if (args.endTime !== undefined && endTime > args.endTime) {
-          return false;
-        }
-        return true;
-      });
-    }
-    
-    // Apply speaker filter if provided
-    if (args.speaker) {
-      filteredTranscripts = filteredTranscripts.filter((transcript: Transcript) => {
-        return transcript.speaker.toLowerCase().includes(args.speaker!.toLowerCase());
-      });
-    }
-
-    if (filteredTranscripts.length === 0) {
+    // Check if we have a valid session with API key
+    if (!validSession) {
       return {
         content: [
           {
             type: "text" as const,
-            text: "No matching video segments found based on your criteria."
+            text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
           }
-        ]
+        ],
+        isError: true
       };
     }
 
-    // Format the results with direct video links
-    const videoBaseUrl = response.mp4.split("?")[0]; // Remove any query parameters
-    
-    // Get the time boundaries
-    const firstSegmentTime = filteredTranscripts[0].start_time;
-    const lastSegmentTime = filteredTranscripts[filteredTranscripts.length - 1].start_time;
-    
-    // Create a timestamped video URL
-    const videoUrlWithTimestamp = `${videoBaseUrl}?t=${Math.floor(firstSegmentTime)}`;
-    
-    // Format individual segments
-    const formattedSegments = filteredTranscripts
-      .map((transcript: Transcript) => {
+    try {
+      const response = await apiRequest(
+        validSession,
+        "get",
+        `/bots/meeting_data?bot_id=${args.meetingId}`
+      );
+
+      // Track this bot in our TinyDB
+      const metadata = extractBotMetadata(response);
+      updateRecentBots(extendedSession, args.meetingId, metadata);
+
+      // Get complete transcript text
+      const transcripts: Transcript[] = response.bot_data.transcripts;
+      
+      // Combine all transcript segments into a single text
+      const fullText = transcripts.map((transcript: Transcript) => {
         const text = transcript.words
           .map((word: { text: string }) => word.text)
           .join(" ");
-        const startTime = formatTime(transcript.start_time);
-        const speaker = transcript.speaker;
+        return `[${formatTime(transcript.start_time)}] ${transcript.speaker}: ${text}`;
+      }).join("\n");
+      
+      // Check if the topic is mentioned anywhere
+      if (!fullText.toLowerCase().includes(args.topic.toLowerCase())) {
+        return `Topic "${args.topic}" was not discussed in this meeting.`;
+      }
+      
+      // Find contextual segments that mention the topic
+      const results = transcripts.filter((transcript: Transcript) => {
+        const text = transcript.words
+          .map((word: { text: string }) => word.text)
+          .join(" ");
+        return text.toLowerCase().includes(args.topic.toLowerCase());
+      });
+
+      // Get surrounding context (transcript segments before and after matches)
+      let contextualResults: Transcript[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const resultIndex = transcripts.findIndex(t => t.start_time === results[i].start_time);
         
-        // Create a segment-specific timestamped URL
-        const segmentUrl = `${videoBaseUrl}?t=${Math.floor(transcript.start_time)}`;
-
-        return `[${startTime}] ${speaker}: ${text}\nSegment link: ${segmentUrl}`;
-      })
-      .join("\n\n");
-
-    const meetingDetails = response.bot_data.bot;
-    
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Found ${filteredTranscripts.length} segments from ${formatTime(firstSegmentTime)} to ${formatTime(lastSegmentTime)} in meeting "${meetingDetails.bot_name}".`
-        },
-        {
-          type: "text" as const,
-          text: `Watch from beginning of segment: ${videoUrlWithTimestamp}`
-        },
-        {
-          type: "text" as const,
-          text: `Individual segments:\n\n${formattedSegments}`
+        // Get up to 2 segments before and after the match for context
+        const startIdx = Math.max(0, resultIndex - 2);
+        const endIdx = Math.min(transcripts.length - 1, resultIndex + 2);
+        
+        for (let j = startIdx; j <= endIdx; j++) {
+          if (!contextualResults.includes(transcripts[j])) {
+            contextualResults.push(transcripts[j]);
+          }
         }
-      ]
-    };
+      }
+      
+      // Sort by start time
+      contextualResults.sort((a, b) => a.start_time - b.start_time);
+      
+      // Format the results with context
+      const formattedResults = contextualResults
+        .map((transcript: Transcript) => {
+          const text = transcript.words
+            .map((word: { text: string }) => word.text)
+            .join(" ");
+          const startTime = formatTime(transcript.start_time);
+          const speaker = transcript.speaker;
+          
+          const highlightedText = text.replace(
+            new RegExp(`(${args.topic})`, "gi"), 
+            "**$1**"
+          );
+
+          return `[${startTime}] ${speaker}: ${highlightedText}`;
+        })
+        .join("\n\n");
+
+      return `Found topic "${args.topic}" in the meeting with context:\n\n${formattedResults}\n\nVideo URL: ${response.mp4}`;
+    } catch (error) {
+      log.error(`Error finding meeting topic`, { error: String(error) });
+      return `Error finding meeting topic: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+};
+
+/**
+ * Search for specific segments of a meeting video by time, speaker, or other criteria
+ */
+export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
+  name: "searchVideoSegment",
+  description: "Search for specific segments in a meeting recording by time or speaker",
+  parameters: searchVideoSegmentParams,
+  execute: async (args, context) => {
+    const { session, log } = context;
+    const extendedSession = session as ExtendedSessionAuth;
+    
+    log.info("Searching video segments", { 
+      botId: args.botId,
+      startTime: args.startTime,
+      endTime: args.endTime,
+      speaker: args.speaker
+    });
+
+    // Create a valid session with fallbacks for API key
+    const validSession = createValidSession(session, log);
+    
+    // Check if we have a valid session with API key
+    if (!validSession) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+          }
+        ],
+        isError: true
+      };
+    }
+
+    try {
+      const response = await apiRequest(
+        validSession,
+        "get",
+        `/bots/meeting_data?bot_id=${args.botId}`
+      );
+
+      // Track this bot in our TinyDB
+      const metadata = extractBotMetadata(response);
+      updateRecentBots(extendedSession, args.botId, metadata);
+
+      const transcripts: Transcript[] = response.bot_data.transcripts;
+      
+      // Filter transcripts based on parameters
+      let filteredTranscripts = transcripts;
+      
+      // Apply time range filter if provided
+      if (args.startTime !== undefined || args.endTime !== undefined) {
+        filteredTranscripts = filteredTranscripts.filter((transcript: ExtendedTranscript) => {
+          // Calculate approximate end time (start_time + 5 seconds is a reasonable estimate if not available)
+          const endTime = transcript.end_time !== undefined ? transcript.end_time : transcript.start_time + 5;
+          
+          // Check if transcript is within the specified time range
+          if (args.startTime !== undefined && transcript.start_time < args.startTime) {
+            return false;
+          }
+          if (args.endTime !== undefined && endTime > args.endTime) {
+            return false;
+          }
+          return true;
+        });
+      }
+      
+      // Apply speaker filter if provided
+      if (args.speaker) {
+        filteredTranscripts = filteredTranscripts.filter((transcript: Transcript) => {
+          return transcript.speaker.toLowerCase().includes(args.speaker!.toLowerCase());
+        });
+      }
+
+      if (filteredTranscripts.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "No matching video segments found based on your criteria."
+            }
+          ]
+        };
+      }
+
+      // Format the results with direct video links
+      const videoBaseUrl = response.mp4.split("?")[0]; // Remove any query parameters
+      
+      // Get the time boundaries
+      const firstSegmentTime = filteredTranscripts[0].start_time;
+      const lastSegmentTime = filteredTranscripts[filteredTranscripts.length - 1].start_time;
+      
+      // Create a timestamped video URL
+      const videoUrlWithTimestamp = `${videoBaseUrl}?t=${Math.floor(firstSegmentTime)}`;
+      
+      // Format individual segments
+      const formattedSegments = filteredTranscripts
+        .map((transcript: Transcript) => {
+          const text = transcript.words
+            .map((word: { text: string }) => word.text)
+            .join(" ");
+          const startTime = formatTime(transcript.start_time);
+          const speaker = transcript.speaker;
+          
+          // Create a segment-specific timestamped URL
+          const segmentUrl = `${videoBaseUrl}?t=${Math.floor(transcript.start_time)}`;
+
+          return `[${startTime}] ${speaker}: ${text}\nSegment link: ${segmentUrl}`;
+        })
+        .join("\n\n");
+
+      const meetingDetails = response.bot_data.bot;
+      
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Found ${filteredTranscripts.length} segments from ${formatTime(firstSegmentTime)} to ${formatTime(lastSegmentTime)} in meeting "${meetingDetails.bot_name}".`
+          },
+          {
+            type: "text" as const,
+            text: `Watch from beginning of segment: ${videoUrlWithTimestamp}`
+          },
+          {
+            type: "text" as const,
+            text: `Individual segments:\n\n${formattedSegments}`
+          }
+        ]
+      };
+    } catch (error) {
+      log.error("Error searching video segments", { error: String(error) });
+      return `An error occurred during the search: ${error instanceof Error ? error.message : String(error)}`;
+    }
   },
 };
 
@@ -684,7 +767,7 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
               startTime: timeRange.startTime,
               endTime: timeRange.endTime,
               speaker: speaker || undefined // Convert null to undefined
-            }, context);
+            }, { ...context, session: validSession });
             
             // Update the persisted database with this bot's metadata
             updateRecentBots(extendedSession, botId, metadata);
@@ -695,7 +778,7 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
             const result = await searchTranscriptTool.execute({
               botId: botId,
               query: args.query
-            }, context);
+            }, { ...context, session: validSession });
             
             // Update the persisted database with this bot's metadata
             updateRecentBots(extendedSession, botId, metadata);
@@ -768,7 +851,7 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
               const result = await searchTranscriptTool.execute({
                 botId: eventBotId,
                 query: searchTerms
-              }, context);
+              }, { ...context, session: validSession });
               
               // If we got a meaningful result, add it to our results
               if (typeof result === 'string' && !(result as string).startsWith("No results found")) {
@@ -823,7 +906,7 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
             const result = searchTranscriptTool.execute({
               botId: recentBotId,
               query: searchTerms
-            }, context);
+            }, { ...context, session: validSession });
             
             // If we got a meaningful result, add it to our results
             if (typeof result === 'string' && !(result as string).startsWith("No results found")) {
