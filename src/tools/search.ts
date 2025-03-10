@@ -48,10 +48,11 @@ const searchVideoSegmentParams = z.object({
 // New schema for intelligent search with flexible parameters
 const intelligentSearchParams = z.object({
   query: z.string().describe("Natural language search query - can include mentions of meeting types, topics, speakers, dates, or any search terms"),
-  filters: z.record(z.string(), z.any()).optional().describe("Optional filters to narrow search results (meetingType, speaker, dateRange, etc.)"),
-  includeContext: z.boolean().optional().default(true).describe("Whether to include conversation context around matching segments"),
+  botId: z.string().describe("ID of the bot or meeting to search"),
   maxResults: z.number().int().min(1).max(50).optional().default(20).describe("Maximum number of results to return"),
+  includeContext: z.boolean().optional().default(true).describe("Whether to include conversation context around matching segments"),
   sortBy: z.enum(["relevance", "date", "speaker"]).optional().default("relevance").describe("How to sort the results"),
+  filters: z.record(z.string(), z.any()).optional().describe("Optional filters to narrow search results (meetingType, speaker, dateRange, etc.)"),
 });
 
 // Tool type with correct typing
@@ -118,11 +119,11 @@ export const searchTranscriptTool: Tool<typeof searchTranscriptParams> = {
     }
 
     try {
-      const response = await apiRequest(
+    const response = await apiRequest(
         validSession,
-        "get",
-        `/bots/meeting_data?bot_id=${args.botId}`
-      );
+      "get",
+      `/bots/meeting_data?bot_id=${args.botId}`
+    );
 
       // Track this bot in our TinyDB
       const metadata = extractBotMetadata(response);
@@ -134,32 +135,32 @@ export const searchTranscriptTool: Tool<typeof searchTranscriptParams> = {
         log.warn("Failed to track recent bot", { error: String(e) });
       }
 
-      const transcripts: Transcript[] = response.bot_data.transcripts;
-      const results = transcripts.filter((transcript: Transcript) => {
+    const transcripts: Transcript[] = response.bot_data.transcripts;
+    const results = transcripts.filter((transcript: Transcript) => {
+      const text = transcript.words
+        .map((word: { text: string }) => word.text)
+        .join(" ");
+      return text.toLowerCase().includes(args.query.toLowerCase());
+    });
+
+    if (results.length === 0) {
+      return `No results found for "${args.query}"`;
+    }
+
+    // Format the results
+    const formattedResults = results
+      .map((transcript: Transcript) => {
         const text = transcript.words
           .map((word: { text: string }) => word.text)
           .join(" ");
-        return text.toLowerCase().includes(args.query.toLowerCase());
-      });
+        const startTime = formatTime(transcript.start_time);
+        const speaker = transcript.speaker;
 
-      if (results.length === 0) {
-        return `No results found for "${args.query}"`;
-      }
+        return `[${startTime}] ${speaker}: ${text}`;
+      })
+      .join("\n\n");
 
-      // Format the results
-      const formattedResults = results
-        .map((transcript: Transcript) => {
-          const text = transcript.words
-            .map((word: { text: string }) => word.text)
-            .join(" ");
-          const startTime = formatTime(transcript.start_time);
-          const speaker = transcript.speaker;
-
-          return `[${startTime}] ${speaker}: ${text}`;
-        })
-        .join("\n\n");
-
-      return `Found ${results.length} results for "${args.query}":\n\n${formattedResults}`;
+    return `Found ${results.length} results for "${args.query}":\n\n${formattedResults}`;
     } catch (error) {
       log.error(`Error searching transcripts`, { error: String(error) });
       return `Error searching transcripts: ${error instanceof Error ? error.message : String(error)}`;
@@ -596,60 +597,23 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
       let speaker: string | null = null;
       let timeRange = { startTime: undefined as number | undefined, endTime: undefined as number | undefined };
       
-      // Extract potential bot ID from query or filters
-      const botIdMatch = args.query.match(/(?:meeting|bot)(?:\s+id|\s+uuid)?[\s:]+([a-f0-9-]{8,})/i);
-      if (botIdMatch && botIdMatch[1]) {
-        botId = botIdMatch[1];
-        searchApproach = "bot-id";
-        log.info(`Found bot ID in query: ${botId}`);
-      } else if (args.filters?.botId) {
-        botId = args.filters.botId;
-        searchApproach = "bot-id";
-        log.info(`Using bot ID from filters: ${botId}`);
-      }
-      
-      // Use the stored bot data to enhance our search capabilities
-      if (!botId) {
-        // Try to identify a bot by topic or meeting type from the query
-        const keyterms = args.query.toLowerCase().split(/\s+/);
-        const recentBots = db.getRecentBots(10); // Get more bots for better matching
-        
-        for (const bot of recentBots) {
-          // Check if the query contains any of the bot's topics
-          if (bot.topics && bot.topics.length > 0) {
-            const matchesTopic = bot.topics.some(topic => 
-              keyterms.includes(topic.toLowerCase())
-            );
-            
-            if (matchesTopic) {
-              botId = bot.id;
-              searchApproach = "topic-match";
-              log.info(`Matched topic in bot ${botId}: ${bot.topics.join(', ')}`);
-              break;
-            }
-          }
-          
-          // Check if query mentions meeting type
-          if (bot.meetingType && args.query.toLowerCase().includes(bot.meetingType.toLowerCase())) {
-            botId = bot.id;
-            searchApproach = "meeting-type-match";
-            log.info(`Matched meeting type in bot ${botId}: ${bot.meetingType}`);
-            break;
-          }
-          
-          // Check if query mentions any participants
-          if (bot.participants && bot.participants.length > 0) {
-            const matchesParticipant = bot.participants.some(participant => 
-              args.query.toLowerCase().includes(participant.toLowerCase())
-            );
-            
-            if (matchesParticipant) {
-              botId = bot.id;
-              searchApproach = "participant-match";
-              log.info(`Matched participant in bot ${botId}`);
-              break;
-            }
-          }
+      // First check for explicit botId parameter
+      if (args.botId) {
+        botId = args.botId;
+        searchApproach = "explicit-bot-id";
+        log.info(`Using explicit botId parameter: ${botId}`);
+      } 
+      // Then extract potential bot ID from query or filters
+      else {
+        const botIdMatch = args.query.match(/(?:meeting|bot)(?:\s+id|\s+uuid)?[\s:]+([a-f0-9-]{8,})/i);
+        if (botIdMatch && botIdMatch[1]) {
+          botId = botIdMatch[1];
+          searchApproach = "query-extracted-bot-id";
+          log.info(`Found bot ID in query: ${botId}`);
+        } else if (args.filters?.botId) {
+          botId = args.filters.botId;
+          searchApproach = "filter-bot-id";
+          log.info(`Using bot ID from filters: ${botId}`);
         }
       }
       
@@ -1003,6 +967,51 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         });
         
         return responseText;
+      }
+      
+      // Use the stored bot data to enhance our search capabilities
+      if (!botId) {
+        // Try to identify a bot by topic or meeting type from the query
+        const keyterms = args.query.toLowerCase().split(/\s+/);
+        const recentBots = db.getRecentBots(10); // Get more bots for better matching
+        
+        for (const bot of recentBots) {
+          // Check if the query contains any of the bot's topics
+          if (bot.topics && bot.topics.length > 0) {
+            const matchesTopic = bot.topics.some(topic => 
+              keyterms.includes(topic.toLowerCase())
+            );
+            
+            if (matchesTopic) {
+              botId = bot.id;
+              searchApproach = "topic-match";
+              log.info(`Matched topic in bot ${botId}: ${bot.topics.join(', ')}`);
+              break;
+            }
+          }
+          
+          // Check if query mentions meeting type
+          if (bot.meetingType && args.query.toLowerCase().includes(bot.meetingType.toLowerCase())) {
+            botId = bot.id;
+            searchApproach = "meeting-type-match";
+            log.info(`Matched meeting type in bot ${botId}: ${bot.meetingType}`);
+            break;
+          }
+          
+          // Check if query mentions any participants
+          if (bot.participants && bot.participants.length > 0) {
+            const matchesParticipant = bot.participants.some(participant => 
+              args.query.toLowerCase().includes(participant.toLowerCase())
+            );
+            
+            if (matchesParticipant) {
+              botId = bot.id;
+              searchApproach = "participant-match";
+              log.info(`Matched participant in bot ${botId}`);
+              break;
+            }
+          }
+        }
       }
       
       // Fallback if no approach worked or was identified
