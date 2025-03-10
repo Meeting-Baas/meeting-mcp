@@ -8,6 +8,7 @@ import { apiRequest } from "../api/client.js";
 import { Transcript } from "../types/index.js";
 import { formatTime } from "../utils/formatters.js";
 import { getTinyDb, BotRecord } from "../utils/tinyDb.js";
+import { createValidSession } from "../utils/auth.js";
 
 // Define our session auth type
 type SessionAuth = { apiKey: string };
@@ -459,7 +460,21 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
     });
 
     try {
-      // Step 1: First, attempt to determine the search approach based on what information we have
+      // Create a valid session with fallbacks for API key
+      const validSession = createValidSession(session, log);
+      
+      // Check if we have a valid session with API key
+      if (!validSession) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+            }
+          ],
+          isError: true
+        };
+      }
       
       // Initialize our TinyDB for persistent bot tracking
       const db = getTinyDb();
@@ -653,7 +668,7 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         try {
           // Get bot metadata to enhance response
           const botData = await apiRequest(
-            session,
+            validSession,
             "get",
             `/bots/meeting_data?bot_id=${botId}`
           );
@@ -700,9 +715,9 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         try {
           // Get calendar events
           const eventsResponse = await apiRequest(
-            session,
+            validSession,
             "get",
-            `/calendar_events/?calendar_id=${calendarId}`
+            `/calendar_events/?calendar_id=${calendarId}&start_date_gte=${timeRange.startTime}&start_date_lte=${timeRange.endTime}&status=all`
           );
           
           if (!eventsResponse || !eventsResponse.data || !Array.isArray(eventsResponse.data)) {
@@ -756,7 +771,7 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
               }, context);
               
               // If we got a meaningful result, add it to our results
-              if (typeof result === 'string' && !result.startsWith("No results found")) {
+              if (typeof result === 'string' && !(result as string).startsWith("No results found")) {
                 matchingResults.push({
                   event: event,
                   botId: eventBotId,
@@ -805,17 +820,17 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         // Try each recent bot
         for (const recentBotId of extendedSession.recentBotIds) {
           try {
-            const result = await searchTranscriptTool.execute({
+            const result = searchTranscriptTool.execute({
               botId: recentBotId,
               query: searchTerms
             }, context);
             
             // If we got a meaningful result, add it to our results
-            if (typeof result === 'string' && !result.startsWith("No results found")) {
+            if (typeof result === 'string' && !(result as string).startsWith("No results found")) {
               // Get bot details to add context
               try {
                 const botData = await apiRequest(
-                  session,
+                  validSession,
                   "get",
                   `/bots/meeting_data?bot_id=${recentBotId}`
                 );

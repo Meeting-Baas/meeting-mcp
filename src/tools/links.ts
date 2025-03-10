@@ -4,15 +4,13 @@
 
 import { z } from "zod";
 import type { Context, TextContent } from "fastmcp";
-import { apiRequest } from "../api/client.js";
+import { apiRequest, SessionAuth } from "../api/client.js";
 import { 
   createShareableLink, 
   createMeetingSegmentsList, 
   createInlineMeetingLink 
 } from "../utils/linkFormatter.js";
-
-// Session auth type
-type SessionAuth = { apiKey: string };
+import { createValidSession } from "../utils/auth.js";
 
 /**
  * Schema for generating a shareable link to a meeting
@@ -30,16 +28,32 @@ const shareableMeetingLinkParams = z.object({
  */
 export const shareableMeetingLinkTool = {
   name: "shareableMeetingLink",
-  description: "Generate a shareable link to a meeting recording, optionally with timestamp",
+  description: "Generate a shareable link to a specific moment in a meeting recording",
   parameters: shareableMeetingLinkParams,
   execute: async (args: z.infer<typeof shareableMeetingLinkParams>, context: Context<SessionAuth>) => {
     const { session, log } = context;
-    log.info("Generating shareable meeting link", { botId: args.botId, timestamp: args.timestamp });
+    log.info("Generating shareable meeting link", { botId: args.botId });
     
     try {
-      // Verify the bot exists
+      // Create a valid session with fallbacks for API key
+      const validSession = createValidSession(session, log);
+      
+      // Check if we have a valid session with API key
+      if (!validSession) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+            }
+          ],
+          isError: true
+        };
+      }
+      
+      // Get the meeting data to verify the bot ID exists
       const response = await apiRequest(
-        session,
+        validSession,
         "get",
         `/bots/meeting_data?bot_id=${args.botId}`
       );
@@ -79,16 +93,32 @@ const shareMeetingSegmentsParams = z.object({
  */
 export const shareMeetingSegmentsTool = {
   name: "shareMeetingSegments",
-  description: "Generate a list of shareable links to specific segments of a meeting recording",
+  description: "Generate a list of links to important moments in a meeting",
   parameters: shareMeetingSegmentsParams,
   execute: async (args: z.infer<typeof shareMeetingSegmentsParams>, context: Context<SessionAuth>) => {
     const { session, log } = context;
-    log.info("Generating meeting segments list", { botId: args.botId, segmentCount: args.segments.length });
+    log.info("Sharing meeting segments", { botId: args.botId, segments: args.segments });
     
     try {
-      // Verify the bot exists
+      // Create a valid session with fallbacks for API key
+      const validSession = createValidSession(session, log);
+      
+      // Check if we have a valid session with API key
+      if (!validSession) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+            }
+          ],
+          isError: true
+        };
+      }
+      
+      // Get the meeting data to verify the bot ID exists
       const response = await apiRequest(
-        session,
+        validSession,
         "get",
         `/bots/meeting_data?bot_id=${args.botId}`
       );
@@ -126,9 +156,25 @@ export const findKeyMomentsTool = {
     log.info("Finding key moments in meeting", { botId: args.botId });
     
     try {
+      // Create a valid session with fallbacks for API key
+      const validSession = createValidSession(session, log);
+      
+      // Check if we have a valid session with API key
+      if (!validSession) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+            }
+          ],
+          isError: true
+        };
+      }
+      
       // Get the meeting data
       const response = await apiRequest(
-        session,
+        validSession,
         "get",
         `/bots/meeting_data?bot_id=${args.botId}`
       );
