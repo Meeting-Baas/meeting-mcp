@@ -459,6 +459,15 @@ export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
 
       const transcripts: Transcript[] = response.bot_data.transcripts;
       
+      // Get all unique speakers to help with fuzzy speaker matching
+      const allSpeakers = new Set<string>();
+      transcripts.forEach((transcript: Transcript) => {
+        if (transcript.speaker) {
+          allSpeakers.add(transcript.speaker.trim());
+        }
+      });
+      log.info(`Meeting speakers: ${Array.from(allSpeakers).join(', ')}`);
+      
       // Filter transcripts based on parameters
       let filteredTranscripts = transcripts;
       
@@ -479,11 +488,42 @@ export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
         });
       }
       
-      // Apply speaker filter if provided
+      // Apply speaker filter if provided, with improved fuzzy matching
       if (args.speaker) {
-        filteredTranscripts = filteredTranscripts.filter((transcript: Transcript) => {
-          return transcript.speaker.toLowerCase().includes(args.speaker!.toLowerCase());
-        });
+        // First, see if we can find an exact match among known speakers
+        const speakerLower = args.speaker.toLowerCase();
+        const exactMatch = Array.from(allSpeakers).find(
+          s => s.toLowerCase() === speakerLower
+        );
+        
+        if (exactMatch) {
+          // If we have an exact match, use it
+          log.info(`Found exact speaker match: ${exactMatch}`);
+          filteredTranscripts = filteredTranscripts.filter((transcript: Transcript) => 
+            transcript.speaker.toLowerCase() === speakerLower
+          );
+        } else {
+          // Otherwise, try fuzzy matching by looking for speakers containing the search term
+          log.info(`Using fuzzy speaker match for: ${args.speaker}`);
+          
+          // First find which speakers partially match the search term
+          const matchingSpeakers = Array.from(allSpeakers).filter(
+            s => s.toLowerCase().includes(speakerLower) || 
+                 speakerLower.includes(s.toLowerCase().split(' ')[0]) // Match on first name too
+          );
+          
+          if (matchingSpeakers.length > 0) {
+            log.info(`Found fuzzy speaker matches: ${matchingSpeakers.join(', ')}`);
+            filteredTranscripts = filteredTranscripts.filter((transcript: Transcript) => 
+              matchingSpeakers.includes(transcript.speaker)
+            );
+          } else {
+            // Fall back to the old behavior if no matches found
+            filteredTranscripts = filteredTranscripts.filter((transcript: Transcript) => 
+              transcript.speaker.toLowerCase().includes(speakerLower)
+            );
+          }
+        }
       }
 
       if (filteredTranscripts.length === 0) {
@@ -634,6 +674,27 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         }
       }
       
+      // Look for speaker names mentioned in the query
+      // Common patterns like "what did [Name] say about..."
+      const speakerPatterns = [
+        /(?:what|when|where|how|why) did ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?) (?:say|talk|speak|mention|discuss)/i,
+        /(?:statements|comments|opinions|thoughts) (?:from|by) ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+        /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?:'s) (?:statements|comments|opinions|thoughts)/i,
+        /when ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?) (?:spoke|said|mentioned|discussed)/i
+      ];
+      
+      // Try to extract speaker info from the query
+      if (!speaker) {
+        for (const pattern of speakerPatterns) {
+          const match = args.query.match(pattern);
+          if (match && match[1]) {
+            speaker = match[1];
+            log.info(`Extracted speaker from query: ${speaker}`);
+            break;
+          }
+        }
+      }
+      
       // Extract the core search terms (removing filter-related phrases)
       let searchTerms = args.query
         .replace(/in\s+(sales|psychiatric|standup|interview|product|planning)\s+meetings?/gi, '')
@@ -642,6 +703,10 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         .replace(/(?:meeting|bot)\s+(?:id|uuid)[\s:]+([a-f0-9-]{8,})/gi, '')
         .replace(/between\s+\d+(?::\d+)?\s+(?:and|to)\s+\d+(?::\d+)?/gi, '')
         .replace(/(?:after|before|around)\s+\d+(?::\d+)?/gi, '')
+        .replace(/(?:what|when|where|how|why) did [A-Z][a-z]+(?:\s+[A-Z][a-z]+)? (?:say|talk|speak|mention|discuss)/gi, '')
+        .replace(/(?:statements|comments|opinions|thoughts) (?:from|by) [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/gi, '')
+        .replace(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:'s) (?:statements|comments|opinions|thoughts)/gi, '')
+        .replace(/when [A-Z][a-z]+(?:\s+[A-Z][a-z]+)? (?:spoke|said|mentioned|discussed)/gi, '')
         .trim();
         
       // If the cleaning removed everything, use the original query
@@ -668,20 +733,169 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
         } catch (e) {
           log.warn("Failed to track recent bot", { error: String(e) });
         }
+
+        // Now let's implement a tiered search approach - from specific to general
         
-        // Decide which search tool to use based on additional parameters
-        if (speaker || (timeRange.startTime !== undefined || timeRange.endTime !== undefined)) {
-          // Use video segment search for time/speaker filtering
-          const result = await searchVideoSegmentTool.execute({
+        // TIER 1: If we have speaker AND search terms, use both for specific filtering
+        if (speaker && searchTerms.trim() !== "") {
+          // Try specific combined search first
+          const videoSegmentResult = await searchVideoSegmentTool.execute({
             botId: botId,
             startTime: timeRange.startTime,
             endTime: timeRange.endTime,
-            speaker: speaker || undefined // Convert null to undefined
+            speaker: speaker
           }, { ...context, session: validSession });
           
-          return result;
-        } else {
-          // Use standard transcript search
+          // We'll manually filter results for the search terms after getting speaker segments
+          if (typeof videoSegmentResult === 'object' && 
+              videoSegmentResult.content && 
+              videoSegmentResult.content.length > 0 &&
+              !videoSegmentResult.content[0].text.includes("No matching video segments found")) {
+              
+            // We got speaker results, now filter them by search terms
+            log.info(`Found speaker segments, now filtering by search terms: ${searchTerms}`);
+            
+            // We need to get the transcript data again
+            const transcripts: Transcript[] = botData.bot_data.transcripts;
+            
+            // First get transcripts matching the speaker
+            const speakerMatch = transcripts.filter((transcript: Transcript) => {
+              const speakerLower = speaker!.toLowerCase();
+              return transcript.speaker.toLowerCase().includes(speakerLower) || 
+                     speakerLower.includes(transcript.speaker.toLowerCase().split(' ')[0]);
+            });
+            
+            // Then filter those by search terms
+            const searchTermWords = searchTerms.toLowerCase().split(/\s+/);
+            const filteredByTerms = speakerMatch.filter((transcript: Transcript) => {
+              const text = transcript.words
+                .map((word: { text: string }) => word.text)
+                .join(" ")
+                .toLowerCase();
+                
+              // Consider a match if ANY of the search terms is found
+              return searchTermWords.some(term => text.includes(term));
+            });
+            
+            if (filteredByTerms.length > 0) {
+              // Format results with direct video links
+              const videoBaseUrl = botData.mp4.split("?")[0];
+              const formattedSegments = filteredByTerms
+                .map((transcript: Transcript) => {
+                  const text = transcript.words
+                    .map((word: { text: string }) => word.text)
+                    .join(" ");
+                  const startTime = formatTime(transcript.start_time);
+                  const speakerName = transcript.speaker;
+                  const segmentUrl = `${videoBaseUrl}?t=${Math.floor(transcript.start_time)}`;
+                  return `[${startTime}] ${speakerName}: ${text}\nSegment link: ${segmentUrl}`;
+                })
+                .join("\n\n");
+                
+                const meetingDetails = botData.bot_data.bot;
+                return {
+                  content: [
+                    {
+                      type: "text" as const,
+                      text: `Found ${filteredByTerms.length} segments where ${speaker} mentioned "${searchTerms}" in meeting "${meetingDetails.bot_name}".`
+                    },
+                    {
+                      type: "text" as const,
+                      text: `Watch from beginning: ${videoBaseUrl}?t=${Math.floor(filteredByTerms[0].start_time)}`
+                    },
+                    {
+                      type: "text" as const,
+                      text: `Individual segments:\n\n${formattedSegments}`
+                    }
+                  ]
+                };
+            }
+          }
+        }
+        
+        // TIER 2: If we have a speaker, try just speaker search
+        if (speaker) {
+          log.info(`Falling back to speaker-only search for: ${speaker}`);
+          const speakerResult = await searchVideoSegmentTool.execute({
+            botId: botId,
+            startTime: timeRange.startTime,
+            endTime: timeRange.endTime,
+            speaker: speaker
+          }, { ...context, session: validSession });
+          
+          // If we got results, return them
+          if (typeof speakerResult === 'object' && 
+              speakerResult.content && 
+              speakerResult.content.length > 0 &&
+              !speakerResult.content[0].text.includes("No matching video segments found")) {
+            return speakerResult;
+          }
+        }
+        
+        // TIER 3: Try multi-term search by breaking query into individual terms
+        if (searchTerms.trim() !== "") {
+          const searchWords = searchTerms.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          
+          if (searchWords.length > 1) {
+            log.info(`Trying multi-term search with words: ${searchWords.join(', ')}`);
+            
+            // Get transcripts
+            const transcripts: Transcript[] = botData.bot_data.transcripts;
+            
+            // Filter by multiple terms
+            const multiTermResults = transcripts.filter((transcript: Transcript) => {
+              const text = transcript.words
+                .map((word: { text: string }) => word.text)
+                .join(" ")
+                .toLowerCase();
+              
+              // Count how many terms match
+              const matchCount = searchWords.filter(term => text.includes(term)).length;
+              
+              // Consider it a match if at least half the terms are found
+              return matchCount >= Math.max(1, Math.floor(searchWords.length / 2));
+            });
+            
+            if (multiTermResults.length > 0) {
+              // Format the results
+              const videoBaseUrl = botData.mp4.split("?")[0];
+              
+              const formattedMultiTermResults = multiTermResults
+                .map((transcript: Transcript) => {
+                  const text = transcript.words
+                    .map((word: { text: string }) => word.text)
+                    .join(" ");
+                  const startTime = formatTime(transcript.start_time);
+                  const speakerName = transcript.speaker;
+                  const segmentUrl = `${videoBaseUrl}?t=${Math.floor(transcript.start_time)}`;
+                  return `[${startTime}] ${speakerName}: ${text}\nSegment link: ${segmentUrl}`;
+                })
+                .join("\n\n");
+                
+                const meetingDetails = botData.bot_data.bot;
+                return {
+                  content: [
+                    {
+                      type: "text" as const,
+                      text: `Found ${multiTermResults.length} segments related to "${searchTerms}" in meeting "${meetingDetails.bot_name}".`
+                    },
+                    {
+                      type: "text" as const,
+                      text: `Watch from beginning: ${videoBaseUrl}?t=${Math.floor(multiTermResults[0].start_time)}`
+                    },
+                    {
+                      type: "text" as const,
+                      text: `Individual segments:\n\n${formattedMultiTermResults}`
+                    }
+                  ]
+                };
+            }
+          }
+        }
+        
+        // TIER 4: Fall back to standard search for simple terms
+        if (searchTerms.trim() !== "") {
+          log.info(`Falling back to standard transcript search for: ${searchTerms}`);
           const result = await searchTranscriptTool.execute({
             botId: botId,
             query: searchTerms
@@ -689,6 +903,17 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
           
           return result;
         }
+        
+        // TIER 5: If nothing else worked, just use video segment search as a last resort
+        log.info(`Using video segment search as last resort`);
+        const result = await searchVideoSegmentTool.execute({
+          botId: botId,
+          startTime: timeRange.startTime,
+          endTime: timeRange.endTime,
+          speaker: speaker || undefined
+        }, { ...context, session: validSession });
+        
+        return result;
       } catch (error) {
         log.error("Error searching meeting data", { error: String(error), botId });
         return `Error searching meeting ${botId}: ${error instanceof Error ? error.message : String(error)}`;
