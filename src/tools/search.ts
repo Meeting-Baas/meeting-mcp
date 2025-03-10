@@ -96,6 +96,7 @@ export const searchTranscriptTool: Tool<typeof searchTranscriptParams> = {
   parameters: searchTranscriptParams,
   execute: async (args, context) => {
     const { session, log } = context;
+    // Cast as ExtendedSessionAuth but handle the case where it might not be fully initialized
     const extendedSession = session as ExtendedSessionAuth;
     
     log.info("Searching transcripts", { botId: args.botId, query: args.query });
@@ -125,7 +126,13 @@ export const searchTranscriptTool: Tool<typeof searchTranscriptParams> = {
 
       // Track this bot in our TinyDB
       const metadata = extractBotMetadata(response);
-      updateRecentBots(extendedSession, args.botId, metadata);
+      // Try to update recent bots, but don't let it fail the main functionality
+      try {
+        updateRecentBots(extendedSession, args.botId, metadata);
+      } catch (e) {
+        // Log but continue even if tracking fails
+        log.warn("Failed to track recent bot", { error: String(e) });
+      }
 
       const transcripts: Transcript[] = response.bot_data.transcripts;
       const results = transcripts.filter((transcript: Transcript) => {
@@ -220,8 +227,13 @@ export const searchTranscriptByTypeTool: Tool<typeof searchTranscriptByTypeParam
           );
 
           // Track this bot in our TinyDB
-          const metadata = extractBotMetadata(response);
-          updateRecentBots(extendedSession, bot.uuid, metadata);
+          try {
+            const metadata = extractBotMetadata(response);
+            updateRecentBots(extendedSession, bot.uuid, metadata);
+          } catch (e) {
+            // Log but continue even if tracking fails
+            log.warn("Failed to track recent bot", { error: String(e) });
+          }
 
           if (response.bot_data && response.bot_data.transcripts) {
             const transcripts: Transcript[] = response.bot_data.transcripts;
@@ -316,8 +328,13 @@ export const findMeetingTopicTool: Tool<typeof findMeetingTopicParams> = {
       );
 
       // Track this bot in our TinyDB
-      const metadata = extractBotMetadata(response);
-      updateRecentBots(extendedSession, args.meetingId, metadata);
+      try {
+        const metadata = extractBotMetadata(response);
+        updateRecentBots(extendedSession, args.meetingId, metadata);
+      } catch (e) {
+        // Log but continue even if tracking fails
+        log.warn("Failed to track recent bot", { error: String(e) });
+      }
 
       // Get complete transcript text
       const transcripts: Transcript[] = response.bot_data.transcripts;
@@ -397,6 +414,7 @@ export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
   parameters: searchVideoSegmentParams,
   execute: async (args, context) => {
     const { session, log } = context;
+    // Safe handling of extendedSession
     const extendedSession = session as ExtendedSessionAuth;
     
     log.info("Searching video segments", { 
@@ -429,9 +447,14 @@ export const searchVideoSegmentTool: Tool<typeof searchVideoSegmentParams> = {
         `/bots/meeting_data?bot_id=${args.botId}`
       );
 
-      // Track this bot in our TinyDB
-      const metadata = extractBotMetadata(response);
-      updateRecentBots(extendedSession, args.botId, metadata);
+      // Try to update recent bots, but don't let it fail the main functionality
+      try {
+        const metadata = extractBotMetadata(response);
+        updateRecentBots(extendedSession, args.botId, metadata);
+      } catch (e) {
+        // Log but continue even if tracking fails
+        log.warn("Failed to track recent bot", { error: String(e) });
+      }
 
       const transcripts: Transcript[] = response.bot_data.transcripts;
       
@@ -770,7 +793,11 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
             }, { ...context, session: validSession });
             
             // Update the persisted database with this bot's metadata
-            updateRecentBots(extendedSession, botId, metadata);
+            try {
+              updateRecentBots(extendedSession, botId, metadata);
+            } catch (e) {
+              log.warn("Failed to track recent bot", { error: String(e) });
+            }
             
             return result;
           } else {
@@ -781,7 +808,11 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
             }, { ...context, session: validSession });
             
             // Update the persisted database with this bot's metadata
-            updateRecentBots(extendedSession, botId, metadata);
+            try {
+              updateRecentBots(extendedSession, botId, metadata);
+            } catch (e) {
+              log.warn("Failed to track recent bot", { error: String(e) });
+            }
             
             return result;
           }
@@ -862,7 +893,11 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
                 });
                 
                 // Update session with the bot ID
-                updateRecentBots(extendedSession, eventBotId);
+                try {
+                  updateRecentBots(extendedSession, eventBotId);
+                } catch (e) {
+                  log.warn("Failed to track recent bot", { error: String(e) });
+                }
               }
             } catch (error) {
               log.error(`Error searching event ${event.uuid}`, { error: String(error) });
@@ -918,10 +953,21 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
                   `/bots/meeting_data?bot_id=${recentBotId}`
                 );
                 
+                const botName = botData.bot_data.bot.bot_name || "Unknown";
+                const meetingUrl = botData.bot_data.bot.meeting_url || "";
+                const createdAt = botData.bot_data.bot.created_at;
+                
+                // Update the persisted database with this bot's info
+                try {
+                  updateRecentBots(extendedSession, recentBotId);
+                } catch (e) {
+                  log.warn("Failed to track recent bot", { error: String(e) });
+                }
+                
                 matchingResults.push({
                   botId: recentBotId,
-                  botName: botData.bot_data.bot.bot_name || 'Unnamed Bot',
-                  meetingUrl: botData.bot_data.bot.meeting_url || 'Unknown URL',
+                  botName: botName,
+                  meetingUrl: meetingUrl,
                   meetingType: botData.bot_data.bot.extra?.meetingType || 'Unknown Type',
                   result: result
                 });
@@ -970,29 +1016,42 @@ export const intelligentSearchTool: Tool<typeof intelligentSearchParams> = {
 };
 
 // Helper function to update the session with recently used bot IDs
-function updateRecentBots(session: ExtendedSessionAuth, botId: string, botMetadata?: Partial<BotRecord>) {
-  // Update the in-memory session for immediate use
-  if (!session.recentBotIds) {
-    session.recentBotIds = [];
+function updateRecentBots(session: ExtendedSessionAuth | undefined, botId: string, botMetadata?: Partial<BotRecord>) {
+  // Skip if session doesn't exist
+  if (!session) {
+    return;
   }
-  
-  // Remove this bot ID if it already exists in the list
-  session.recentBotIds = session.recentBotIds.filter(id => id !== botId);
-  
-  // Add this bot ID to the front of the list
-  session.recentBotIds.unshift(botId);
-  
-  // Keep only the 5 most recent bot IDs
-  if (session.recentBotIds.length > 5) {
-    session.recentBotIds = session.recentBotIds.slice(0, 5);
+
+  try {
+    // Update the in-memory session for immediate use
+    if (!session.recentBotIds) {
+      session.recentBotIds = [];
+    }
+    
+    // Remove this bot ID if it already exists in the list
+    session.recentBotIds = session.recentBotIds.filter(id => id !== botId);
+    
+    // Add this bot ID to the front of the list
+    session.recentBotIds.unshift(botId);
+    
+    // Keep only the 5 most recent bot IDs
+    if (session.recentBotIds.length > 5) {
+      session.recentBotIds = session.recentBotIds.slice(0, 5);
+    }
+    
+    // Update the persistent database with this bot and its metadata
+    const db = getTinyDb();
+    if (botMetadata) {
+      db.trackBot({
+        id: botId,
+        ...botMetadata
+      });
+    }
+  } catch (error) {
+    // Silently catch any errors with session manipulation
+    // This ensures search functionality still works even if tracking doesn't
+    console.error("Failed to update recent bots:", error);
   }
-  
-  // Update the persistent database with this bot and its metadata
-  const db = getTinyDb();
-  db.trackBot({
-    id: botId,
-    ...(botMetadata || {})
-  });
 }
 
 // Helper function to extract bot metadata from API response
