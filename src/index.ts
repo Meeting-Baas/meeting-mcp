@@ -12,25 +12,22 @@ import * as path from 'path';
 import * as os from 'os';
 import { z } from "zod";
 
-// Import tools correctly from their source files
+// Import tools from the consolidated export
 import {
+  // Meeting tools
   joinMeetingTool,
   leaveMeetingTool,
   getMeetingDataTool,
   getMeetingDataWithCredentialsTool,
-} from "./tools/index.js";
-
-// Import search tools and others - these haven't been refactored yet
-import {
+  
+  // Search tools
   searchTranscriptTool,
   searchTranscriptByTypeTool,
   findMeetingTopicTool,
   searchVideoSegmentTool,
   intelligentSearchTool,
-} from "./tools/search.js";
-
-// Import calendar tools - these haven't been refactored yet
-import {
+  
+  // Calendar tools
   oauthGuidanceTool,
   listRawCalendarsTool,
   setupCalendarOAuthTool,
@@ -47,14 +44,12 @@ import {
   cancelRecordingTool,
   cancelRecordingWithCredentialsTool,
   checkCalendarIntegrationTool,
-} from "./tools/calendar.js";
-
-// Import link tools - these haven't been refactored yet
-import {
+  
+  // Link tools
   shareableMeetingLinkTool,
   shareMeetingSegmentsTool,
   findKeyMomentsTool,
-} from "./tools/links.js";
+} from "./tools/index.js";
 
 // Import resources
 import {
