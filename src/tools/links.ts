@@ -144,8 +144,10 @@ const findKeyMomentsParams = z.object({
   maxMoments: z.number().default(5).describe("Maximum number of key moments to find"),
   granularity: z.enum(["high", "medium", "low"]).default("medium")
     .describe("Level of detail for topic extraction: 'high' finds many specific topics, 'medium' is balanced, 'low' finds fewer broad topics"),
-  autoDetectTopics: z.boolean().default(false)
+  autoDetectTopics: z.boolean().default(true)
     .describe("Automatically detect important topics in the meeting without requiring predefined topics"),
+  initialChunkSize: z.number().default(1200)
+    .describe("Initial chunk size in seconds to analyze (default 20 minutes)"),
 });
 
 /**
@@ -196,35 +198,96 @@ export const findKeyMomentsTool = {
         return `No transcript found for meeting "${meetingTitle}". You can still view the recording:\n\n${createShareableLink(args.botId, { title: meetingTitle })}`;
       }
       
-      // Adjust maxMoments based on granularity
-      let adjustedMaxMoments = args.maxMoments;
-      if (args.granularity === "high") {
-        adjustedMaxMoments = Math.max(10, args.maxMoments);
-      } else if (args.granularity === "low") {
-        adjustedMaxMoments = Math.min(3, args.maxMoments);
+      // Sort transcripts by time to ensure chronological order
+      const sortedTranscripts = [...transcripts].sort((a, b) => a.start_time - b.start_time);
+      
+      // Determine meeting duration
+      const meetingStart = sortedTranscripts[0].start_time;
+      const meetingEnd = sortedTranscripts[sortedTranscripts.length - 1].start_time;
+      const meetingDuration = meetingEnd - meetingStart;
+      
+      log.info("Meeting duration detected", { 
+        meetingDuration: meetingDuration,
+        segmentCount: sortedTranscripts.length 
+      });
+      
+      // Divide meeting into larger chunks for initial analysis
+      // Default to 20 minutes chunks or the entire meeting if shorter
+      const chunkSize = Math.min(meetingDuration, args.initialChunkSize);
+      const chunks: Array<any[]> = [];
+      
+      // Create chunks of transcript segments
+      for (let startTime = meetingStart; startTime < meetingEnd; startTime += chunkSize) {
+        const endTime = Math.min(startTime + chunkSize, meetingEnd);
+        const chunkTranscripts = sortedTranscripts.filter(
+          t => t.start_time >= startTime && t.start_time < endTime
+        );
+        if (chunkTranscripts.length > 0) {
+          chunks.push(chunkTranscripts);
+        }
       }
       
-      // Auto-detect topics if requested
-      let topicsToSearch = args.topics || [];
+      log.info("Meeting divided into chunks", { 
+        chunkCount: chunks.length,
+        chunkSizeSeconds: chunkSize
+      });
+      
+      // Process each chunk to find keywords/topics
+      let allTopics: string[] = args.topics || [];
+      let allKeyMoments: Array<{
+        start_time: number;
+        speaker: string;
+        description: string;
+        score: number;
+      }> = [];
+      
       if (args.autoDetectTopics) {
-        const detectedTopics = detectTopicsFromTranscript(transcripts, args.granularity);
-        topicsToSearch = [...new Set([...topicsToSearch, ...detectedTopics])];
+        // Analyze each chunk to find topics
+        for (const chunk of chunks) {
+          const chunkTopics = detectTopicsFromChunk(chunk);
+          allTopics = [...allTopics, ...chunkTopics];
+        }
+        
+        // Remove duplicates and sort by relevance
+        allTopics = [...new Set(allTopics)];
+        
+        log.info("Topics detected across all chunks", { 
+          topicCount: allTopics.length, 
+          topics: allTopics 
+        });
       }
       
-      // Find key moments based on the transcript
-      const keyMoments = findInterestingMoments(
-        transcripts, 
-        topicsToSearch, 
-        adjustedMaxMoments,
-        args.granularity
-      );
+      // If we found topics, or were given topics, search for key moments in all chunks
+      if (allTopics.length > 0) {
+        // Use divide and conquer approach to find moments
+        for (const chunk of chunks) {
+          const moments = findMomentsInChunk(chunk, allTopics, args.granularity);
+          allKeyMoments.push(...moments);
+        }
+        
+        // Sort by score (relevance) and take top N moments
+        allKeyMoments.sort((a, b) => b.score - a.score);
+      }
       
-      if (keyMoments.length === 0) {
+      // Regardless, ensure we have some key moments by adding structural ones
+      // (meeting start, end, dense segments) if needed
+      if (allKeyMoments.length < args.maxMoments) {
+        addStructuralKeyMoments(allKeyMoments, sortedTranscripts, args.maxMoments);
+      }
+      
+      // Sort by timestamp for presentation
+      allKeyMoments.sort((a, b) => a.start_time - b.start_time);
+      
+      // Ensure we don't exceed requested max moments
+      allKeyMoments = allKeyMoments.slice(0, args.maxMoments);
+      
+      // If we still have no key moments, return a message
+      if (allKeyMoments.length === 0) {
         return `No key moments found in meeting "${meetingTitle}". You can view the full recording:\n\n${createShareableLink(args.botId, { title: meetingTitle })}`;
       }
       
       // Format the segments
-      const formattedSegments = keyMoments.map(moment => ({
+      const formattedSegments = allKeyMoments.map(moment => ({
         timestamp: moment.start_time,
         speaker: moment.speaker,
         description: moment.description
@@ -236,8 +299,12 @@ export const findKeyMomentsTool = {
       // Include auto-detected topics if any were found
       let result = `# Key Moments from ${meetingTitle}\n\n`;
       
-      if (args.autoDetectTopics && topicsToSearch.length > 0) {
-        result += `## Main Topics Discussed\n${topicsToSearch.map(topic => `- ${topic}`).join('\n')}\n\n`;
+      if (args.autoDetectTopics && allTopics.length > 0) {
+        // Just show top topics (max 5-10 depending on granularity)
+        const topicLimit = args.granularity === "high" ? 10 : args.granularity === "medium" ? 7 : 5;
+        const topTopics = allTopics.slice(0, topicLimit);
+        
+        result += `## Main Topics Discussed\n${topTopics.map(topic => `- ${topic}`).join('\n')}\n\n`;
       }
       
       result += segmentsList;
@@ -251,11 +318,11 @@ export const findKeyMomentsTool = {
 };
 
 /**
- * Detects important topics from a transcript based on keyword frequency and context
+ * Detects important topics from a transcript chunk using frequency analysis
+ * Uses a language-agnostic approach that works with any language
  */
-function detectTopicsFromTranscript(
-  transcripts: any[], 
-  granularity: string = "medium"
+function detectTopicsFromChunk(
+  transcripts: any[]
 ): string[] {
   if (!transcripts || transcripts.length === 0) {
     return [];
@@ -268,242 +335,220 @@ function detectTopicsFromTranscript(
       : "";
   }).join(" ");
   
-  // Tokenize the text
-  const words = fullText.toLowerCase()
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-    .split(/\s+/);
+  // Split by sentence to maintain some context
+  const sentences = fullText.split(/[.!?]+/).filter(s => s.trim().length > 0);
   
-  // Define stopwords (common words to ignore)
-  const stopwords = new Set([
-    "a", "an", "the", "and", "or", "but", "is", "are", "was", "were", "be", "been", "being",
-    "in", "on", "at", "to", "for", "with", "by", "about", "like", "through", "over", "before",
-    "after", "between", "under", "above", "of", "during", "this", "that", "these", "those",
-    "it", "its", "it's", "we", "our", "us", "they", "their", "them", "i", "my", "me", "he", "his", "him",
-    "she", "her", "you", "your", "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-    "should", "can", "could", "may", "might", "must", "just", "very", "so", "too", "also", "as"
-  ]);
-  
-  // Count word frequencies, ignoring stopwords
-  const wordFrequency: Record<string, number> = {};
-  for (const word of words) {
-    if (word.length > 3 && !stopwords.has(word)) {
-      wordFrequency[word] = (wordFrequency[word] || 0) + 1;
-    }
-  }
-  
-  // Extract phrases (2-3 word combinations)
+  // Extract potential important phrases (2-4 words) based on frequency and context
   const phrases: Record<string, number> = {};
-  for (let i = 0; i < transcripts.length; i++) {
-    const text = transcripts[i].words
-      ? transcripts[i].words.map((w: any) => w.text).join(" ").toLowerCase()
-      : "";
+  
+  for (const sentence of sentences) {
+    const tokens = sentence.trim().split(/\s+/);
     
-    const tokens = text.split(/\s+/);
+    // Skip very short sentences
+    if (tokens.length < 3) continue;
     
-    // Extract 2-word phrases
-    for (let j = 0; j < tokens.length - 1; j++) {
-      if (tokens[j].length > 3 && tokens[j+1].length > 3) {
-        const phrase = `${tokens[j]} ${tokens[j+1]}`;
-        phrases[phrase] = (phrases[phrase] || 0) + 1;
-      }
-    }
-    
-    // Extract 3-word phrases
-    for (let j = 0; j < tokens.length - 2; j++) {
-      if (tokens[j].length > 3 && tokens[j+2].length > 3) {
-        const phrase = `${tokens[j]} ${tokens[j+1]} ${tokens[j+2]}`;
-        phrases[phrase] = (phrases[phrase] || 0) + 1;
+    // Process potential n-grams (2, 3, and 4-word phrases)
+    for (let n = 2; n <= 4; n++) {
+      if (tokens.length < n) continue;
+      
+      for (let i = 0; i <= tokens.length - n; i++) {
+        const phrase = tokens.slice(i, i + n).join(" ");
+        // Only consider phrases with reasonable length
+        if (phrase.length > 5) {
+          phrases[phrase] = (phrases[phrase] || 0) + 1;
+        }
       }
     }
   }
   
-  // Determine number of topics to return based on granularity
-  let topicCount = 5;
-  if (granularity === "high") {
-    topicCount = 10;
-  } else if (granularity === "low") {
-    topicCount = 3;
-  }
-  
-  // Combine word and phrase frequencies, prioritizing phrases
-  const combined = { ...wordFrequency };
-  for (const [phrase, count] of Object.entries(phrases)) {
-    // Phrases need to appear at least twice to be considered
-    if (count >= 2) {
-      combined[phrase] = count * 2;  // Weight phrases higher
-    }
-  }
-  
-  // Sort by frequency and get top N topics
-  const sortedTopics = Object.entries(combined)
+  // Sort by frequency and get top phrases
+  const sortedPhrases = Object.entries(phrases)
+    .filter(([_, count]) => count > 1) // Must appear more than once
     .sort((a, b) => b[1] - a[1])
-    .map(([topic]) => topic);
+    .map(([phrase]) => phrase);
   
-  // Return top N topics
-  return sortedTopics.slice(0, topicCount);
+  return sortedPhrases.slice(0, 10); // Return top 10 phrases from this chunk
 }
 
 /**
- * Find interesting moments in a transcript
+ * Find moments in a chunk that match given topics
  */
-function findInterestingMoments(
-  transcripts: any[], 
-  topics: string[] = [], 
-  maxMoments = 5,
+function findMomentsInChunk(
+  transcripts: any[],
+  topics: string[] = [],
   granularity: string = "medium"
 ): Array<{ 
   start_time: number; 
   speaker: string; 
   description: string;
+  score: number;
 }> {
-  if (!transcripts || transcripts.length === 0) {
+  if (!transcripts || transcripts.length === 0 || topics.length === 0) {
     return [];
   }
   
   const keyMoments = [];
   
-  // Sort transcripts by start time
+  // For each transcript segment, score it against all topics
+  for (const transcript of transcripts) {
+    if (!transcript.words) continue;
+    
+    const text = transcript.words.map((w: any) => w.text).join(" ");
+    
+    // For each topic, check if it appears in this segment
+    for (const topic of topics) {
+      if (text.toLowerCase().includes(topic.toLowerCase())) {
+        // Calculate a relevance score based on:
+        // 1. How many times the topic appears
+        // 2. Position in segment (beginning is more important)
+        // 3. Speaker (favor segments with clear speakers)
+        
+        // Count occurrences (case insensitive)
+        const occurrences = (text.toLowerCase().match(new RegExp(topic.toLowerCase(), 'g')) || []).length;
+        const positionIndex = text.toLowerCase().indexOf(topic.toLowerCase()) / text.length;
+        const speakerBonus = transcript.speaker ? 1.2 : 1.0;
+        
+        // Calculate score: more occurrences and earlier position are better
+        const score = (occurrences * (1.0 - positionIndex * 0.5)) * speakerBonus;
+        
+        keyMoments.push({
+          start_time: transcript.start_time,
+          speaker: transcript.speaker || "Unknown speaker",
+          description: `Discussion about "${topic}"`,
+          score: score
+        });
+        
+        // Only count each segment once per topic
+        break;
+      }
+    }
+  }
+  
+  return keyMoments;
+}
+
+/**
+ * Add structural key moments based on meeting structure
+ */
+function addStructuralKeyMoments(
+  keyMoments: Array<{ 
+    start_time: number; 
+    speaker: string; 
+    description: string;
+    score: number;
+  }>,
+  transcripts: any[],
+  maxMoments: number
+) {
+  // First, check if we already have meeting start
   const sortedTranscripts = [...transcripts].sort((a, b) => a.start_time - b.start_time);
   
-  // Calculate appropriate segment size based on granularity and total meeting length
-  const meetingStart = sortedTranscripts[0].start_time;
-  const meetingEnd = sortedTranscripts[sortedTranscripts.length - 1].start_time;
-  const meetingDuration = meetingEnd - meetingStart;
+  if (sortedTranscripts.length === 0) return;
   
-  let segmentSize = Math.floor(meetingDuration / 10); // Default for medium granularity
-  if (granularity === "high") {
-    segmentSize = Math.floor(meetingDuration / 20); // Smaller segments for high granularity
-  } else if (granularity === "low") {
-    segmentSize = Math.floor(meetingDuration / 5); // Larger segments for low granularity
+  // Add meeting start if not already there
+  const first = sortedTranscripts[0];
+  if (!keyMoments.some(m => Math.abs(m.start_time - first.start_time) < 30)) {
+    keyMoments.push({
+      start_time: first.start_time,
+      speaker: first.speaker || "Unknown speaker",
+      description: "Meeting start",
+      score: 100 // High score to ensure it's included
+    });
   }
   
-  // Minimum segment size of 30 seconds
-  segmentSize = Math.max(segmentSize, 30);
-  
-  // Group transcripts into segments
-  const segments: Array<any[]> = [];
-  let currentSegment: any[] = [];
-  let currentSegmentStart = meetingStart;
-  
-  for (const transcript of sortedTranscripts) {
-    if (transcript.start_time - currentSegmentStart > segmentSize) {
-      if (currentSegment.length > 0) {
-        segments.push(currentSegment);
-      }
-      currentSegment = [transcript];
-      currentSegmentStart = transcript.start_time;
-    } else {
-      currentSegment.push(transcript);
-    }
-  }
-  
-  // Add the last segment
-  if (currentSegment.length > 0) {
-    segments.push(currentSegment);
-  }
-  
-  // If we have topics, prioritize finding segments that mention those topics
-  if (topics && topics.length > 0) {
-    for (const segment of segments) {
-      if (keyMoments.length >= maxMoments) break;
-      
-      // Combine all text in this segment
-      const segmentText = segment.map(transcript => {
-        return transcript.words
-          ? transcript.words.map((w: any) => w.text).join(" ")
-          : "";
-      }).join(" ").toLowerCase();
-      
-      for (const topic of topics) {
-        if (segmentText.includes(topic.toLowerCase())) {
-          const representativeTranscript = segment[0]; // Use the first transcript as representative
-          keyMoments.push({
-            start_time: representativeTranscript.start_time,
-            speaker: representativeTranscript.speaker,
-            description: `Discussion about "${topic}"`
-          });
-          break;
-        }
-      }
-    }
-  }
-  
-  // Always include meeting start
-  if (sortedTranscripts.length > 0 && keyMoments.length < maxMoments) {
-    const first = sortedTranscripts[0];
-    // Check if we already have a moment close to the start
-    if (!keyMoments.some(m => Math.abs(m.start_time - first.start_time) < 30)) {
-      keyMoments.push({
-        start_time: first.start_time,
-        speaker: first.speaker,
-        description: "Meeting start"
-      });
-    }
-  }
-  
-  // Always try to include meeting end if we have space
-  if (sortedTranscripts.length > 0 && keyMoments.length < maxMoments) {
+  // Add meeting end if not already there and we have space
+  if (keyMoments.length < maxMoments) {
     const last = sortedTranscripts[sortedTranscripts.length - 1];
-    // Check if we already have a moment close to the end
     if (!keyMoments.some(m => Math.abs(m.start_time - last.start_time) < 30)) {
       keyMoments.push({
         start_time: last.start_time,
-        speaker: last.speaker,
-        description: "Meeting conclusion"
+        speaker: last.speaker || "Unknown speaker",
+        description: "Meeting conclusion",
+        score: 90 // High score but lower than start
       });
     }
   }
   
-  // Find segments with high engagement (multiple speakers)
+  // Add high speaker participation segments if needed
   if (keyMoments.length < maxMoments) {
-    for (const segment of segments) {
-      if (keyMoments.length >= maxMoments) break;
-      
-      // Count unique speakers in this segment
-      const speakers = new Set(segment.map(t => t.speaker));
-      
-      if (speakers.size > 1) {
-        const representative = segment[0];
-        // Check if we already have this moment
-        if (!keyMoments.some(m => Math.abs(m.start_time - representative.start_time) < segmentSize)) {
-          keyMoments.push({
-            start_time: representative.start_time,
-            speaker: representative.speaker,
-            description: `Discussion with ${speakers.size} participants`
-          });
+    // Group nearby segments
+    const meetingDuration = sortedTranscripts[sortedTranscripts.length - 1].start_time - sortedTranscripts[0].start_time;
+    const segmentSize = Math.max(60, Math.floor(meetingDuration / 20)); // At least 1 minute segments
+    
+    const segments: Array<any[]> = [];
+    let currentSegment: any[] = [];
+    let currentSegmentStart = sortedTranscripts[0].start_time;
+    
+    for (const transcript of sortedTranscripts) {
+      if (transcript.start_time - currentSegmentStart > segmentSize) {
+        if (currentSegment.length > 0) {
+          segments.push(currentSegment);
         }
+        currentSegment = [transcript];
+        currentSegmentStart = transcript.start_time;
+      } else {
+        currentSegment.push(transcript);
       }
     }
-  }
-  
-  // If we still need more moments, select segments with longer speech (potentially important parts)
-  if (keyMoments.length < maxMoments) {
-    const remainingNeeded = maxMoments - keyMoments.length;
     
-    // Find longest segments by word count
-    const rankedSegments = segments
+    // Add the last segment
+    if (currentSegment.length > 0) {
+      segments.push(currentSegment);
+    }
+    
+    // Find segments with multiple speakers
+    const multiSpeakerSegments = segments
       .map(segment => {
-        const totalWords = segment.reduce((sum, transcript) => {
-          return sum + (transcript.words ? transcript.words.length : 0);
-        }, 0);
-        return { segment, totalWords };
+        const speakers = new Set(segment.map(t => t.speaker).filter(Boolean));
+        return {
+          segment,
+          speakerCount: speakers.size,
+          wordCount: segment.reduce((sum, t) => sum + (t.words ? t.words.length : 0), 0)
+        };
       })
-      .sort((a, b) => b.totalWords - a.totalWords)
-      .slice(0, remainingNeeded);
+      .filter(s => s.speakerCount > 1)
+      .sort((a, b) => (b.speakerCount * 10 + b.wordCount) - (a.speakerCount * 10 + a.wordCount));
     
-    for (const { segment } of rankedSegments) {
+    // Add top multi-speaker segments
+    for (const { segment, speakerCount } of multiSpeakerSegments) {
+      if (keyMoments.length >= maxMoments) break;
+      
       const representative = segment[0];
       // Check if we already have this moment
       if (!keyMoments.some(m => Math.abs(m.start_time - representative.start_time) < segmentSize)) {
         keyMoments.push({
           start_time: representative.start_time,
-          speaker: representative.speaker,
-          description: "Extended discussion"
+          speaker: representative.speaker || "Unknown speaker",
+          description: `Discussion with ${speakerCount} participants`,
+          score: 70 + speakerCount // Higher score for more speakers
         });
       }
     }
   }
   
-  // Sort the moments by time
-  return keyMoments.sort((a, b) => a.start_time - b.start_time);
+  // Add longest segments if still needed
+  if (keyMoments.length < maxMoments) {
+    const remainingNeeded = maxMoments - keyMoments.length;
+    
+    // Find longest segments by word count
+    const longestSegments = [...transcripts]
+      .sort((a, b) => {
+        const aWords = a.words ? a.words.length : 0;
+        const bWords = b.words ? b.words.length : 0;
+        return bWords - aWords;
+      })
+      .slice(0, remainingNeeded);
+    
+    for (const segment of longestSegments) {
+      // Avoid duplicates
+      if (!keyMoments.some(m => Math.abs(m.start_time - segment.start_time) < 30)) {
+        keyMoments.push({
+          start_time: segment.start_time,
+          speaker: segment.speaker || "Unknown speaker",
+          description: "Extended discussion",
+          score: 50 + (segment.words ? segment.words.length / 10 : 0) // Score based on length
+        });
+      }
+    }
+  }
 } 
