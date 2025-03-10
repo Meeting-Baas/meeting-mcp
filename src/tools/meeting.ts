@@ -9,6 +9,7 @@ import { RECORDING_MODES, BOT_CONFIG, SPEECH_TO_TEXT_PROVIDERS, AUDIO_FREQUENCIE
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { createValidSession } from "../utils/auth.js";
 
 // Define the parameters schemas
 const joinMeetingParams = z.object({
@@ -206,29 +207,11 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
     // Basic logging
     log.info("Joining meeting", { url: args.meetingUrl, botName });
     
-    // Get API key from session or environment variable
-    let apiKey = session?.apiKey;
-    
-    // If not available in session, check environment variable
-    if (!apiKey && process.env.MEETING_BAAS_API_KEY) {
-      apiKey = process.env.MEETING_BAAS_API_KEY;
-    }
-    
-    // Try to get API key from Claude Desktop config if still not found
-    if (!apiKey && claudeConfig) {
-      const claudeDesktopConfigPath = path.join(os.homedir(), 'Library/Application Support/Claude/claude_desktop_config.json');
-      if (fs.existsSync(claudeDesktopConfigPath)) {
-        const configContent = fs.readFileSync(claudeDesktopConfigPath, 'utf8');
-        const configJson = JSON.parse(configContent);
-        
-        if (configJson.mcpServers?.meetingbaas?.headers?.['x-api-key']) {
-          apiKey = configJson.mcpServers.meetingbaas.headers['x-api-key'];
-        }
-      }
-    }
+    // Use our utility function to get a valid session with API key
+    const validSession = createValidSession(session, log);
     
     // Verify we have an API key
-    if (!apiKey) {
+    if (!validSession) {
       log.error("Authentication failed - no API key available");
       return {
         content: [
@@ -268,24 +251,21 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
     };
 
     try {
-      // Create a session object with the API key
-      const effectiveSession = { apiKey };
-      
-      // Use the client to join the meeting
-      const client = new MeetingBaasClient(apiKey);
+      // Use the client to join the meeting with the API key from our valid session
+      const client = new MeetingBaasClient(validSession.apiKey);
       const result = await client.joinMeeting(payload);
       
       // Prepare response message with details
       let responseMessage = `Bot named "${botName}" joined meeting successfully. Bot ID: ${result.bot_id}`;
       if (botImage) responseMessage += "\nCustom bot image is being used.";
-      if (entryMessage) responseMessage += `\nBot will greet participants with: "${entryMessage}"`;
-      
-      log.info("Join meeting success", { botId: result.bot_id });
+      if (entryMessage) responseMessage += "\nThe bot will send an entry message.";
+      if (args.startTime) {
+        responseMessage += "\nThe bot is scheduled to join at the specified start time.";
+      }
+
       return responseMessage;
     } catch (error) {
-      log.error("Join meeting failed", { error: String(error) });
-      
-      // Return a nicer error message
+      log.error("Failed to join meeting", { error: String(error) });
       return {
         content: [
           {
@@ -296,7 +276,7 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
         isError: true
       };
     }
-  },
+  }
 };
 
 /**
@@ -310,11 +290,27 @@ export const leaveMeetingTool: Tool<typeof stopRecordingParams> = {
     const { session, log } = context;
     log.info("Leaving meeting", { botId: args.botId });
 
-    const response = await apiRequest(session, "delete", `/bots/${args.botId}`);
+    // Create a valid session with fallbacks for API key
+    const validSession = createValidSession(session, log);
+    
+    // Check if we have a valid session with API key
+    if (!validSession) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+          }
+        ],
+        isError: true
+      };
+    }
+
+    const response = await apiRequest(validSession, "delete", `/bots/${args.botId}`);
     if (response.ok) {
       return "Bot left the meeting successfully";
     } else {
-      throw new Error("Failed to leave meeting");
+      return `Failed to make bot leave: ${response.error || "Unknown error"}`;
     }
   },
 };
@@ -330,8 +326,24 @@ export const getMeetingDataTool: Tool<typeof getMeetingDetailsParams> = {
     const { session, log } = context;
     log.info("Getting meeting data", { meetingId: args.meetingId });
 
+    // Create a valid session with fallbacks for API key
+    const validSession = createValidSession(session, log);
+    
+    // Check if we have a valid session with API key
+    if (!validSession) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Authentication failed. Please configure your API key in Claude Desktop settings or provide it directly."
+          }
+        ],
+        isError: true
+      };
+    }
+
     const response = await apiRequest(
-      session,
+      validSession,
       "get",
       `/bots/meeting_data?meeting_id=${args.meetingId}`
     );
