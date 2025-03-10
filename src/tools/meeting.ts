@@ -362,9 +362,12 @@ export const getMeetingDataTool: MeetingBaaSTool<typeof getMeetingDetailsParams>
           type: "text" as const,
           text: `Meeting recording is available. Duration: ${minutes}m ${seconds}s. Contains ${transcriptCount} transcript segments.`,
         },
+        {
+          type: "text" as const,
+          text: `MP4 URL: ${response.mp4}`,
+        }
       ],
-      error: false,
-      json: response,
+      isError: false
     };
   }
 );
@@ -402,9 +405,12 @@ export const getMeetingDataWithCredentialsTool: MeetingBaaSTool<typeof getMeetin
           type: "text" as const,
           text: `Meeting recording is available. Duration: ${minutes}m ${seconds}s. Contains ${transcriptCount} transcript segments.`,
         },
+        {
+          type: "text" as const,
+          text: `MP4 URL: ${response.mp4}`,
+        }
       ],
-      error: false,
-      json: response,
+      isError: false
     };
   }
 );
