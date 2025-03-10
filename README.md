@@ -166,6 +166,7 @@ The server exposes several tools through the MCP protocol:
 - `searchVideoSegment`: Finds specific segments of a video based on time range or speaker
   - Parameters: `botId` (the bot that recorded the meeting), `startTime` (optional), `endTime` (optional), `speaker` (optional)
   - Returns: Video segments with direct links to specific timestamps
+  - Results include shareable viewer URLs like: `https://meetingbaas.com/viewer/{BOT_ID}?t={TIMESTAMP_SECONDS}`
 - `intelligentSearch`: Performs an adaptive search across meeting data with natural language understanding
   - Parameters: 
     - `query` (natural language search query - supports meeting types, topics, speakers, dates, etc.)
@@ -182,6 +183,8 @@ The server exposes several tools through the MCP protocol:
     - "Find mentions of budget in meeting with bot ID abc-123"
     - "Search my marketing calendar for discussions about the Q4 campaign"
     - "What did Sarah say in our most recent meeting?"
+  - Results can be used to generate direct time-specific links to the recording viewer:
+    - `https://meetingbaas.com/viewer/{BOT_ID}?t={TIMESTAMP_SECONDS}`
 - `getTranscriptSummary`: Gets an AI-generated summary of meeting content
 
 ## Example Workflows
@@ -354,6 +357,13 @@ This approach eliminates the need to manually call the OAuth setup tools, making
    "Show me the parts where we talked about customer requirements"
    ```
 
+10. Share direct links to specific moments in meetings:
+   ```
+   "Find when we discussed the marketing budget and give me a shareable link to that moment"
+   "Create a link to the part of yesterday's meeting where Sarah presented the Q4 roadmap"
+   "Share the segment of the design review where we debated the user interface changes"
+   ```
+
 ### Using Direct Credential Tools
 
 You can provide API credentials directly in your queries:
@@ -375,6 +385,27 @@ You can provide API credentials directly in your queries:
    ```
    "Cancel the recording for event 97cd62f0-ea9b-42b3-add5-7a607ce6d80f using API key tesban"
    ```
+
+### Accessing Meeting Recordings
+
+Meeting recordings can be accessed directly through the Meeting BaaS viewer using the bot ID:
+
+```
+https://meetingbaas.com/viewer/{BOT_ID}
+```
+
+For example:
+```
+https://meetingbaas.com/viewer/67738f48-2360-4f9e-a999-275a74208ff5
+```
+
+This viewer provides:
+- The meeting video recording
+- Synchronized transcript with speaker identification
+- Navigation by speaker or topic
+- Direct link sharing with teammates
+
+When using the `createBot`, `getBots`, or search tools, you'll receive bot IDs that can be used to construct these viewer URLs for easy access to recordings.
 
 ## Configuration
 
