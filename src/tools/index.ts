@@ -4,6 +4,7 @@
 
 // Meeting tools
 export * from "./meeting.js";
+export { getMeetingDataWithCredentialsTool } from "./meeting.js";
 
 // Search tools
 export * from "./search.js";

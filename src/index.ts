@@ -39,7 +39,8 @@ import {
   checkCalendarIntegrationTool,
   shareableMeetingLinkTool,
   shareMeetingSegmentsTool,
-  findKeyMomentsTool
+  findKeyMomentsTool,
+  getMeetingDataWithCredentialsTool,
 } from "./tools/index.js";
 
 // Import resources
@@ -220,6 +221,7 @@ async function loadClaudeDesktopConfig() {
   server.addTool(shareableMeetingLinkTool);
   server.addTool(shareMeetingSegmentsTool);
   server.addTool(findKeyMomentsTool);
+  server.addTool(getMeetingDataWithCredentialsTool);
   
   // Register resources
   server.addResourceTemplate(meetingTranscriptResource);

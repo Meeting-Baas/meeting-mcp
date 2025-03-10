@@ -154,6 +154,12 @@ The server exposes several tools through the MCP protocol:
 - `getBotsByMeeting`: Gets bots for a specific meeting URL
 - `getRecording`: Retrieves recording information for a specific bot/meeting
 - `getRecordingStatus`: Checks the status of a recording in progress
+- `getMeetingData`: Gets transcript and recording data for a specific meeting
+  - Parameters: `meetingId` (ID of the meeting to get data for)
+  - Returns: Information about the meeting recording including duration and transcript segment count
+- `getMeetingDataWithCredentials`: Gets transcript and recording data using direct API credentials
+  - Parameters: `meetingId` (ID of the meeting), `apiKey` (API key for authentication)
+  - Returns: Same information as `getMeetingData` but with direct authentication
 
 ### Transcript Tools
 
@@ -420,6 +426,12 @@ You can provide API credentials directly in your queries:
 
    ```
    "Cancel the recording for event 97cd62f0-ea9b-42b3-add5-7a607ce6d80f using API key tesban"
+   ```
+
+4. Get meeting data with direct credentials:
+
+   ```
+   "Get meeting data for meeting 47de9462-bea7-406c-b79a-fd6b82c3de76 using API key tesban"
    ```
 
 ### Accessing Meeting Recordings

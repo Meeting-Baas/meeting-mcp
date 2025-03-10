@@ -2,24 +2,13 @@
  * Meeting tool implementation
  */
 
-import type { Context, TextContent } from "fastmcp";
+import type { Context, TextContent, Tool } from "fastmcp";
 import { z } from "zod";
 import { apiRequest, MeetingBaasClient, SessionAuth } from "../api/client.js";
 import { RECORDING_MODES, BOT_CONFIG, SPEECH_TO_TEXT_PROVIDERS, AUDIO_FREQUENCIES } from "../config.js";
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-
-// Tool type with correct typing
-type Tool<P extends z.ZodType<any, any>> = {
-  name: string;
-  description: string;
-  parameters: P;
-  execute: (
-    args: z.infer<P>,
-    context: Context<SessionAuth>
-  ) => Promise<string | { content: TextContent[] } | any>;
-};
 
 // Define the parameters schemas
 const joinMeetingParams = z.object({
@@ -94,8 +83,19 @@ const searchTranscriptParams = z.object({
   query: z.string().describe("Search query for the transcript"),
 });
 
+/**
+ * Parameters for getting meeting data
+ */
 const getMeetingDetailsParams = z.object({
-  meetingId: z.string().describe("ID of the meeting to get details for"),
+  meetingId: z.string().describe("ID of the meeting to get data for"),
+});
+
+/**
+ * Parameters for getting meeting data with direct credentials
+ */
+const getMeetingDetailsWithCredentialsParams = z.object({
+  meetingId: z.string().describe("ID of the meeting to get data for"),
+  apiKey: z.string().describe("API key for authentication"),
 });
 
 const stopRecordingParams = z.object({
@@ -349,11 +349,49 @@ export const getMeetingDataTool: Tool<typeof getMeetingDetailsParams> = {
           type: "text" as const,
           text: `Meeting recording is available. Duration: ${minutes}m ${seconds}s. Contains ${transcriptCount} transcript segments.`,
         },
+      ],
+      error: false,
+      json: response,
+    };
+  },
+};
+
+/**
+ * Get meeting data with direct credentials
+ */
+export const getMeetingDataWithCredentialsTool: Tool<typeof getMeetingDetailsWithCredentialsParams> = {
+  name: "getMeetingDataWithCredentials",
+  description: "Get recording and transcript data from a meeting using direct API credentials",
+  parameters: getMeetingDetailsWithCredentialsParams,
+  execute: async (args, context) => {
+    const { log } = context;
+    log.info("Getting meeting data with direct credentials", { meetingId: args.meetingId });
+
+    // Create a session object with the provided API key
+    const session: SessionAuth = { apiKey: args.apiKey };
+
+    const response = await apiRequest(
+      session,
+      "get",
+      `/bots/meeting_data?meeting_id=${args.meetingId}`
+    );
+
+    // Create a summary of the meeting
+    const duration = response.duration;
+    const minutes = Math.floor(duration / 60);
+    const seconds = duration % 60;
+
+    const transcriptCount = response.bot_data.transcripts.length;
+
+    return {
+      content: [
         {
           type: "text" as const,
-          text: `Video URL: ${response.mp4}`,
+          text: `Meeting recording is available. Duration: ${minutes}m ${seconds}s. Contains ${transcriptCount} transcript segments.`,
         },
       ],
+      error: false,
+      json: response,
     };
   },
 };
