@@ -346,7 +346,7 @@ export const getMeetingDataTool: MeetingBaaSTool<typeof getMeetingDetailsParams>
     const response = await apiRequest(
       validSession,
       "get",
-      `/bots/meeting_data?meeting_id=${args.meetingId}`
+      `/bots/meeting_data?bot_id=${args.meetingId}`
     );
 
     // Create a summary of the meeting
@@ -386,7 +386,7 @@ export const getMeetingDataWithCredentialsTool: MeetingBaaSTool<typeof getMeetin
     const response = await apiRequest(
       session,
       "get",
-      `/bots/meeting_data?meeting_id=${args.meetingId}`
+      `/bots/meeting_data?bot_id=${args.meetingId}`
     );
 
     // Create a summary of the meeting
