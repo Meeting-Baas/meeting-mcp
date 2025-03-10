@@ -10,38 +10,51 @@ import { SERVER_CONFIG } from "./config.js";
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { z } from "zod";
 
-// Import tools
+// Import tools correctly from their source files
 import {
-  getMeetingDataTool,
   joinMeetingTool,
   leaveMeetingTool,
-  listCalendarsTool,
-  listUpcomingMeetingsTool,
-  scheduleRecordingTool,
-  scheduleRecordingWithCredentialsTool,
+  getMeetingDataTool,
+  getMeetingDataWithCredentialsTool,
+} from "./tools/index.js";
+
+// Import search tools and others - these haven't been refactored yet
+import {
   searchTranscriptTool,
   searchTranscriptByTypeTool,
   findMeetingTopicTool,
   searchVideoSegmentTool,
   intelligentSearchTool,
-  getCalendarTool,
+} from "./tools/search.js";
+
+// Import calendar tools - these haven't been refactored yet
+import {
+  oauthGuidanceTool,
   listRawCalendarsTool,
   setupCalendarOAuthTool,
+  listCalendarsTool,
+  getCalendarTool,
   deleteCalendarTool,
   resyncAllCalendarsTool,
+  listUpcomingMeetingsTool,
   listEventsTool,
   listEventsWithCredentialsTool,
   getEventTool,
+  scheduleRecordingTool,
+  scheduleRecordingWithCredentialsTool,
   cancelRecordingTool,
   cancelRecordingWithCredentialsTool,
-  oauthGuidanceTool,
   checkCalendarIntegrationTool,
+} from "./tools/calendar.js";
+
+// Import link tools - these haven't been refactored yet
+import {
   shareableMeetingLinkTool,
   shareMeetingSegmentsTool,
   findKeyMomentsTool,
-  getMeetingDataWithCredentialsTool,
-} from "./tools/index.js";
+} from "./tools/links.js";
 
 // Import resources
 import {
@@ -179,7 +192,10 @@ async function loadClaudeDesktopConfig() {
         return { apiKey: keyValue };
       } catch (error) {
         serverLog(`Authentication error: ${error}`);
-        throw error;
+        throw new Response(null, {
+          status: 500,
+          statusText: "Authentication error",
+        });
       }
     }
   });
@@ -193,19 +209,23 @@ async function loadClaudeDesktopConfig() {
     serverLog(`Client disconnected`);
   });
   
-  // Register tools
-  server.addTool(joinMeetingTool);
-  server.addTool(leaveMeetingTool);
-  server.addTool(getMeetingDataTool);
+  // Register tools using our helper function - only register the ones we've updated with MeetingBaaSTool
+  registerTool(server, joinMeetingTool);
+  registerTool(server, leaveMeetingTool);
+  registerTool(server, getMeetingDataTool);
+  registerTool(server, getMeetingDataWithCredentialsTool);
+
+  // For the rest, use the original method until we refactor them
   server.addTool(searchTranscriptTool);
   server.addTool(searchTranscriptByTypeTool);
   server.addTool(findMeetingTopicTool);
   server.addTool(searchVideoSegmentTool);
   server.addTool(intelligentSearchTool);
-  server.addTool(listCalendarsTool);
-  server.addTool(getCalendarTool);
+  server.addTool(oauthGuidanceTool);
   server.addTool(listRawCalendarsTool);
   server.addTool(setupCalendarOAuthTool);
+  server.addTool(listCalendarsTool);
+  server.addTool(getCalendarTool);
   server.addTool(deleteCalendarTool);
   server.addTool(resyncAllCalendarsTool);
   server.addTool(listUpcomingMeetingsTool);
@@ -216,12 +236,10 @@ async function loadClaudeDesktopConfig() {
   server.addTool(scheduleRecordingWithCredentialsTool);
   server.addTool(cancelRecordingTool);
   server.addTool(cancelRecordingWithCredentialsTool);
-  server.addTool(oauthGuidanceTool);
   server.addTool(checkCalendarIntegrationTool);
   server.addTool(shareableMeetingLinkTool);
   server.addTool(shareMeetingSegmentsTool);
   server.addTool(findKeyMomentsTool);
-  server.addTool(getMeetingDataWithCredentialsTool);
   
   // Register resources
   server.addResourceTemplate(meetingTranscriptResource);
@@ -260,3 +278,18 @@ async function loadClaudeDesktopConfig() {
     serverLog(`Error starting server: ${error}`);
   }
 })();
+
+import type { MeetingBaaSTool } from "./utils/tool-types.js";
+import type { Tool } from "fastmcp";
+
+/**
+ * Helper function to safely register tools with the FastMCP server
+ * 
+ * This function handles the type casting needed to satisfy TypeScript
+ * while still using our properly designed MeetingBaaSTool interface
+ */
+function registerTool<P extends z.ZodType>(server: FastMCP<SessionAuth>, tool: MeetingBaaSTool<P>): void {
+  // Cast to any to bypass TypeScript's strict type checking
+  // This is safe because our MeetingBaaSTool interface ensures compatibility
+  server.addTool(tool as unknown as Tool<SessionAuth, P>);
+}

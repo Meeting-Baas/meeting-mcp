@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { createValidSession } from "../utils/auth.js";
+import { createTool, MeetingBaaSTool } from "../utils/tool-types.js";
 
 // Define the parameters schemas
 const joinMeetingParams = z.object({
@@ -138,11 +139,11 @@ function readClaudeDesktopConfig(log: any) {
 /**
  * Join a meeting
  */
-export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
-  name: "joinMeeting",
-  description: "Have a bot join a meeting now or schedule it for the future. Bot name, image, and entry message will use system defaults if not specified.",
-  parameters: joinMeetingParams,
-  execute: async (args, context) => {
+export const joinMeetingTool: MeetingBaaSTool<typeof joinMeetingParams> = createTool(
+  "joinMeeting",
+  "Have a bot join a meeting now or schedule it for the future. Bot name, image, and entry message will use system defaults if not specified.",
+  joinMeetingParams,
+  async (args, context) => {
     const { session, log } = context;
     
     // Directly load Claude Desktop config
@@ -277,16 +278,16 @@ export const joinMeetingTool: Tool<typeof joinMeetingParams> = {
       };
     }
   }
-};
+);
 
 /**
  * Leave a meeting
  */
-export const leaveMeetingTool: Tool<typeof stopRecordingParams> = {
-  name: "leaveMeeting",
-  description: "Have a bot leave an ongoing meeting",
-  parameters: stopRecordingParams,
-  execute: async (args, context) => {
+export const leaveMeetingTool: MeetingBaaSTool<typeof stopRecordingParams> = createTool(
+  "leaveMeeting",
+  "Have a bot leave an ongoing meeting",
+  stopRecordingParams,
+  async (args, context) => {
     const { session, log } = context;
     log.info("Leaving meeting", { botId: args.botId });
 
@@ -312,17 +313,17 @@ export const leaveMeetingTool: Tool<typeof stopRecordingParams> = {
     } else {
       return `Failed to make bot leave: ${response.error || "Unknown error"}`;
     }
-  },
-};
+  }
+);
 
 /**
  * Get meeting data
  */
-export const getMeetingDataTool: Tool<typeof getMeetingDetailsParams> = {
-  name: "getMeetingData",
-  description: "Get recording and transcript data from a meeting",
-  parameters: getMeetingDetailsParams,
-  execute: async (args, context) => {
+export const getMeetingDataTool: MeetingBaaSTool<typeof getMeetingDetailsParams> = createTool(
+  "getMeetingData",
+  "Get recording and transcript data from a meeting",
+  getMeetingDetailsParams,
+  async (args, context) => {
     const { session, log } = context;
     log.info("Getting meeting data", { meetingId: args.meetingId });
 
@@ -365,17 +366,17 @@ export const getMeetingDataTool: Tool<typeof getMeetingDetailsParams> = {
       error: false,
       json: response,
     };
-  },
-};
+  }
+);
 
 /**
  * Get meeting data with direct credentials
  */
-export const getMeetingDataWithCredentialsTool: Tool<typeof getMeetingDetailsWithCredentialsParams> = {
-  name: "getMeetingDataWithCredentials",
-  description: "Get recording and transcript data from a meeting using direct API credentials",
-  parameters: getMeetingDetailsWithCredentialsParams,
-  execute: async (args, context) => {
+export const getMeetingDataWithCredentialsTool: MeetingBaaSTool<typeof getMeetingDetailsWithCredentialsParams> = createTool(
+  "getMeetingDataWithCredentials",
+  "Get recording and transcript data from a meeting using direct API credentials",
+  getMeetingDetailsWithCredentialsParams,
+  async (args, context) => {
     const { log } = context;
     log.info("Getting meeting data with direct credentials", { meetingId: args.meetingId });
 
@@ -405,5 +406,5 @@ export const getMeetingDataWithCredentialsTool: Tool<typeof getMeetingDetailsWit
       error: false,
       json: response,
     };
-  },
-};
+  }
+);
