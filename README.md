@@ -28,6 +28,9 @@ This project implements a Model Context Protocol (MCP) server that allows AI ass
 
 - Node.js (v16 or later)
 - npm
+- **MeetingBaaS Account**: You need access to a MeetingBaaS account using your corporate email address
+  - All logs, bots, and shared links are available to colleagues with the same corporate domain (not personal emails like gmail.com)
+  - This enables seamless collaboration where all team members can access meeting recordings and transcripts created by anyone in your organization
 
 ## Installation
 
@@ -440,6 +443,8 @@ This viewer provides:
 
 When using the `createBot`, `getBots`, or search tools, you'll receive bot IDs that can be used to construct these viewer URLs for easy access to recordings.
 
+> **Important**: All meeting recordings and links are automatically shared with colleagues who have the same corporate email domain (e.g., @yourcompany.com). This allows your entire team to access recordings without requiring individual permissions, creating a collaborative environment where meeting knowledge is accessible to everyone in your organization.
+
 ## Configuration
 
 The server can be configured through environment variables or by editing the `src/config.ts` file.
@@ -515,6 +520,8 @@ To integrate with Claude Desktop:
    ```
 
    **Note:** Replace `/path/to/meeting-mcp` with the path to your local repository and `YOUR_API_KEY` with your actual API key.
+
+   > **Important:** Ensure you're using an API key associated with your corporate email account. All recordings, bot logs, and shared links will be automatically accessible to colleagues with the same email domain for seamless team collaboration.
 
 3. Restart Claude Desktop.
 
