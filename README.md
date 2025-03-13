@@ -163,38 +163,54 @@ The server exposes several tools through the MCP protocol:
 
 ### Transcript Tools
 
-- `searchTranscript`: Searches through meeting transcripts for specific terms
-  - Parameters: `bot_id` (the bot that recorded the meeting), `query` (search term)
-  - Returns: Matching segments with speaker information and timestamps
-- `searchTranscriptByType`: Searches across meetings of a specific type (using the "extra" field)
-  - Parameters: `meetingType` (type of meeting to search, e.g., "sales", "psychiatric"), `query` (search term), `limit` (max results, default 10)
-  - Returns: Matching segments from meetings of the specified type, with speaker and timestamp information
-- `findMeetingTopic`: Intelligently searches for a topic in a meeting, providing context around the mentions
-  - Parameters: `meetingId` (the meeting to search), `topic` (the topic to find)
-  - Returns: Contextual segments that mention the topic, with surrounding conversation for context
-- `searchVideoSegment`: Finds specific segments of a video based on time range or speaker
-  - Parameters: `botId` (the bot that recorded the meeting), `startTime` (optional), `endTime` (optional), `speaker` (optional)
-  - Returns: Video segments with direct links to specific timestamps
-  - Results include shareable viewer URLs like: `https://meetingbaas.com/viewer/{BOT_ID}?t={TIMESTAMP_SECONDS}`
-- `intelligentSearch`: Performs an adaptive search across meeting data with natural language understanding
-  - Parameters: 
-    - `query` (natural language search query - supports meeting types, topics, speakers, dates, etc.)
-    - `filters` (optional structured filters including `botId`, `calendarId`, `meetingType`, `speaker`, `startTime`, `endTime`)
-    - `includeContext` (whether to include surrounding conversation, default: true)
-    - `maxResults` (maximum results to return, default: 20)
-    - `sortBy` (how to sort results: "relevance", "date", or "speaker", default: "relevance")
-  - Returns: Rich, context-aware search results with meeting metadata and direct video links
-  - Search approaches:
-    - **Bot ID-based**: Searches within a specific meeting when you know the bot ID
-    - **Calendar-based**: Searches across calendar events and their associated recordings
-    - **Recent meetings**: Maintains session history of recently used bots for follow-up searches
-  - Example queries:
-    - "Find mentions of budget in meeting with bot ID abc-123"
-    - "Search my marketing calendar for discussions about the Q4 campaign"
-    - "What did Sarah say in our most recent meeting?"
-  - Results can be used to generate direct time-specific links to the recording viewer:
-    - `https://meetingbaas.com/viewer/{BOT_ID}?t={TIMESTAMP_SECONDS}`
-- `getTranscriptSummary`: Gets an AI-generated summary of meeting content
+- `getMeetingTranscript`: Gets a meeting transcript with speaker names and content grouped by speaker
+  - Parameters: `botId` (the bot that recorded the meeting)
+  - Returns: Complete transcript with speaker information, formatted as paragraphs grouped by speaker
+  - Example output:
+    ```
+    Meeting: "Weekly Team Meeting"
+    Duration: 45m 30s
+    Transcript:
+
+    John Smith: Hello everyone, thanks for joining today's call. We have a lot to cover regarding the Q3 roadmap and our current progress on the platform redesign.
+
+    Sarah Johnson: Thanks John. I've prepared some slides about the user testing results we got back yesterday. The feedback was generally positive but there are a few areas we need to address.
+    ```
+
+- `findKeyMoments`: Automatically identifies and shares links to important moments in a meeting
+  - Parameters: `botId`, optional `meetingTitle`, optional list of `topics` to look for, and optional `maxMoments`
+  - Returns: Markdown-formatted list of key moments with links, automatically detected based on transcript
+  - Uses AI-powered analysis to find significant moments without requiring manual timestamp selection
+
+### QR Code Tools
+
+- `generateQRCode`: Creates an AI-generated QR code image that can be used as a bot avatar
+  - Parameters:
+    - `type`: Type of QR code (url, email, phone, sms, text)
+    - `to`: Destination for the QR code (URL, email, phone number, or text)
+    - `prompt`: AI prompt to customize the QR code (max 1000 characters). You can include your API key directly in the prompt text by typing "API key: qrc_your_key" or similar phrases.
+    - `style`: Style of the QR code (style_default, style_dots, style_rounded, style_crystal)
+    - `useAsBotImage`: Whether to use the generated QR code as the bot avatar (default: true)
+    - `template`: Template ID for the QR code (optional)
+    - `apiKey`: Your QR Code AI API key (optional, will use default if not provided)
+  - Returns: URL to the generated QR code image that can be used directly with the joinMeeting tool
+  - Example usage:
+    ```
+    "Generate a QR code with my email lazare@spoke.app that looks like a Tiger in crystal style"
+    ```
+  - Example with API key in the prompt:
+    ```
+    "Generate a QR code for my website https://example.com that looks like a mountain landscape. Use API key: qrc_my-personal-api-key-123456"
+    ```
+  - Example with formal parameter:
+    ```
+    "Generate a QR code with the following parameters:
+    - Type: email
+    - To: john.doe@example.com
+    - Prompt: Create a QR code that looks like a mountain landscape
+    - Style: style_rounded
+    - API Key: qrc_my-personal-api-key-123456"
+    ```
 
 ### Link Sharing Tools
 
@@ -215,11 +231,6 @@ The server exposes several tools through the MCP protocol:
   - Parameters: `botId` and an array of `segments` with timestamps, speakers, and descriptions
   - Returns: Markdown-formatted list of segments with direct links to each moment
   - Useful for creating a table of contents for a long meeting
-
-- `findKeyMoments`: Automatically identifies and shares links to important moments in a meeting
-  - Parameters: `botId`, optional `meetingTitle`, optional list of `topics` to look for, and optional `maxMoments`
-  - Returns: Markdown-formatted list of key moments with links, automatically detected based on transcript
-  - Uses AI-powered analysis to find significant moments without requiring manual timestamp selection
 
 ## Example Workflows
 
@@ -332,78 +343,22 @@ This approach eliminates the need to manually call the OAuth setup tools, making
 
 ### Analyzing Meeting Content
 
-1. Search for specific topics:
+1. Get the full transcript of a meeting:
 
    ```
-   "Find all mentions of the marketing budget in yesterday's team meeting"
+   "Get the transcript from my team meeting with bot ID abc-123"
    ```
 
-2. Get insights from specific speakers:
+2. Find key moments in a meeting:
 
    ```
-   "What did Sarah say about the new product launch in our meeting last Tuesday?"
+   "Identify key moments from yesterday's product planning meeting with bot ID xyz-456"
    ```
 
-3. Get meeting summaries:
-   ```
-   "Summarize the key points from this morning's standup meeting"
-   ```
+3. Share a specific moment from a meeting:
 
-4. Search across meeting types:
    ```
-   "Search for discussions about patient symptoms across all psychiatric meetings"
-   ```
-
-5. Find topics with context:
-   ```
-   "Find discussions about quarterly targets in meeting abc-123 and show me the surrounding conversation"
-   ```
-
-6. Find specific video segments:
-   ```
-   "Show me the video segments where John was speaking between 15 and 20 minutes into meeting xyz-456"
-   ```
-
-7. Search using meeting metadata:
-   ```
-   "Search my sales meetings for mentions of the new pricing strategy"
-   ```
-
-8. Use natural language search across all meetings:
-   ```
-   "Find any discussions about budget concerns in meetings from last week"
-   "Show me what Sarah said about the product roadmap in recent meetings"
-   "Search for conversations about customer feedback in yesterday's standup"
-   "Find meeting segments where the team discussed implementation timeframes"
-   ```
-
-9. Use the different intelligent search approaches:
-   ```
-   // Bot ID-based search
-   "Search in meeting abc-123 for mentions of the new product launch"
-   
-   // Calendar-based search
-   "Find discussions about deadlines in my marketing team calendar"
-   "Search through my work calendar for meetings where we discussed the budget"
-   
-   // Recent meetings search (no explicit bot ID needed)
-   "What did Alex say about the database migration?"
-   "Show me the parts where we talked about customer requirements"
-   ```
-
-10. Share direct links to specific moments in meetings:
-   ```
-   "Find when we discussed the marketing budget and give me a shareable link to that moment"
-   "Create a link to the part of yesterday's meeting where Sarah presented the Q4 roadmap"
-   "Share the segment of the design review where we debated the user interface changes"
-   ```
-
-11. Use AI to find and share key moments from a meeting:
-   ```
-   "Find key moments in our last product planning meeting and share links to them"
-   "Create a table of contents with links for the quarterly review meeting"
-   "Share the parts of the interview where the candidate discussed their experience with React"
-   "Automatically find and share important moments from meeting abc-123"
+   "Create a shareable link to the part of meeting abc-123 at timestamp 12:45 where John was talking about the budget"
    ```
 
 ### Using Direct Credential Tools
@@ -432,6 +387,37 @@ You can provide API credentials directly in your queries:
 
    ```
    "Get meeting data for meeting 47de9462-bea7-406c-b79a-fd6b82c3de76 using API key tesban"
+   ```
+
+### Using AI-Generated QR Codes as Bot Avatars
+
+1. Generate a QR code with your contact information and a custom design:
+
+   ```
+   "Generate a QR code with the following parameters:
+   - Type: email
+   - To: john.doe@company.com
+   - Prompt: Create a professional-looking QR code with abstract blue patterns that resemble a corporate logo
+   - Style: style_crystal"
+   ```
+
+2. Use the generated QR code as a bot avatar in a meeting:
+
+   ```
+   "Join my Zoom meeting at https://zoom.us/j/123456789 with the following parameters:
+   - Bot name: QR Code Assistant
+   - Bot image: [URL from the generated QR code]
+   - Entry message: Hello everyone, I'm here to record the meeting. You can scan my avatar to get my contact information."
+   ```
+
+3. Generate a QR code with a meeting link for easy sharing:
+
+   ```
+   "Generate a QR code with the following parameters:
+   - Type: url
+   - To: https://zoom.us/j/123456789
+   - Prompt: Create a colorful QR code with a calendar icon in the center
+   - Style: style_rounded"
    ```
 
 ### Accessing Meeting Recordings
@@ -489,7 +475,7 @@ To integrate with Claude Desktop:
            "cd /path/to/meeting-mcp && (npm run build 1>&2) && MCP_FROM_CLAUDE=true node dist/index.js"
          ],
          "headers": {
-           "x-api-key": "YOUR_API_KEY"
+           "x-api-key": "YOUR_API_KEY_FOR_MEETING_BAAS"
          },
          "botConfig": {
            "name": "Meeting Assistant",
@@ -535,6 +521,8 @@ To integrate with Claude Desktop:
 
    > **Important:** Ensure you're using an API key associated with your corporate email account. All recordings, bot logs, and shared links will be automatically accessible to colleagues with the same email domain for seamless team collaboration.
 
+   > **Note about QR Code API:** The QR Code API uses the same header name (`x-api-key`) as the Meeting BaaS API, but it must be configured separately. For QR Code generation functionality, you should use one of the methods described in the "QR Code API Key Configuration" section below, such as setting an environment variable or including the key directly in the prompt.
+
 3. Restart Claude Desktop.
 
 The configuration explained:
@@ -543,7 +531,8 @@ The configuration explained:
   - `cd` to your project directory
   - Build the project with error output redirected to stderr
   - Run the server with the `MCP_FROM_CLAUDE=true` environment variable to indicate it's running from Claude Desktop
-- `headers` contains the API key for authentication
+- `headers` contains the API keys for authentication:
+  - `x-api-key`: Your Meeting BaaS API key for accessing the meeting service
 - `botConfig` allows you to customize the bot's appearance and behavior:
   - `name`: The name displayed for the bot in meetings (default: "Claude Assistant")
   - `image`: URL to a publicly accessible image to use as the bot's avatar (optional)
@@ -563,23 +552,23 @@ The configuration explained:
     - Example: 
     ```json
     {
-      "meetingType": "sales",                                 // Used by searchTranscriptByType and intelligentSearch
+      "meetingType": "sales",
       "summaryPrompt": "Focus on action items and decision points",
-      "searchKeywords": ["budget", "timeline", "deliverables"],  // Key terms that can be easily searched
-      "timeStampHighlights": [                                // Can be used with searchVideoSegment
+      "searchKeywords": ["budget", "timeline", "deliverables"],
+      "timeStampHighlights": [
         {"time": "00:05:23", "note": "Discussion about Q2 sales numbers"},
         {"time": "00:12:47", "note": "Team disagreement on marketing strategy"}
       ],
-      "participants": ["John Smith", "Jane Doe", "Bob Johnson"],  // Meeting participants for more context
-      "project": "Project Phoenix",                           // Project association for filtering
-      "department": "Engineering",                            // Organizational context
-      "priority": "High",                                     // Meeting importance
-      "followupDate": "2023-12-15",                           // When to revisit topics
-      "tags": ["technical", "planning", "retrospective"]      // Flexible tagging system
+      "participants": ["John Smith", "Jane Doe", "Bob Johnson"],
+      "project": "Project Phoenix",
+      "department": "Engineering",
+      "priority": "High",
+      "followupDate": "2023-12-15",
+      "tags": ["technical", "planning", "retrospective"]
     }
     ```
 
-The `extra` field is extremely flexible - you can add any structured metadata that makes sense for your organization and use cases. All of this metadata is fully searchable by the `intelligentSearch` tool, which can extract meaning from natural language queries.
+The `extra` field is extremely flexible - you can add any structured metadata that makes sense for your organization and use cases.
 
 ## Integration with Cursor
 
@@ -646,29 +635,33 @@ The server expects an API key in the `x-api-key` header for authentication. You 
 
 Direct authentication is also supported in many tools (named with "WithCredentials") where you can provide the API key directly as a parameter rather than in headers.
 
-## Advanced Features
-
-### Persistent Bot Tracking
-
-The server maintains a persistent database of recently used bots, which enables:
-
-- Contextual follow-up queries about meetings without needing to specify the bot ID
-- Improved topic matching across multiple meetings
-- Automatic knowledge of meeting participants, topics, and context
-- Enhanced intelligent search capabilities
-
-This tracking is completely transparent to users and dramatically improves the experience when having conversations about meetings over time.
-
-### Intelligent Adaptive Search
-
-The intelligent search capability adapts to available information:
-
-- Can search by explicit bot ID when known
-- Searches by meeting type, participants, or keywords when exact bot ID isn't known
-- Automatically uses calendar data when available
-- Remembers previous meeting context for follow-up questions
-- Provides rich, AI-friendly results with full context
-
 ## License
 
 [MIT](LICENSE)
+
+## QR Code API Key Configuration
+
+The QR code generator tool requires an API key from QR Code AI API. There are several ways to provide this:
+
+1. **Directly in the prompt**: Include your API key directly in the prompt text when using the `generateQRCode` tool, e.g., "Generate a QR code for my website https://example.com with API key: qrc_your_key"
+
+2. **As a parameter**: Provide your API key as the `apiKey` parameter when using the `generateQRCode` tool
+
+3. **Environment variable**: Set the `QRCODE_API_KEY` environment variable
+
+4. **Claude Desktop config**: Add the API key to your Claude Desktop configuration file located at:
+   - Mac/Linux: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+   Example configuration:
+   ```json
+   {
+     "headers": {
+       "x-api-key": "qrc_your_key_here" 
+     }
+   }
+   ```
+
+The tool will check for the API key in the order listed above. If no API key is provided, the default API key will be used if available.
+
+You can obtain an API key by signing up at [QR Code AI API](https://qrcode-ai.com).

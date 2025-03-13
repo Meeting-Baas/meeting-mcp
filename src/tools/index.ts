@@ -3,14 +3,24 @@
  */
 
 // Meeting tools
-export * from "./meeting.js";
-export { getMeetingDataWithCredentialsTool } from "./meeting.js";
+export * from './meeting.js';
+export { getMeetingDataWithCredentialsTool } from './meeting.js';
 
-// Search tools
-export * from "./search.js";
+// Simplified transcript tool
+export { getTranscriptTool } from './search.js';
 
 // Calendar tools
-export * from "./calendar.js";
+export * from './calendar.js';
 
 // Link sharing tools
-export * from "./links.js";
+export * from './links.js';
+
+// Bot management tools
+export * from './deleteData.js';
+export * from './listBots.js';
+
+// Environment tools
+export * from './environment.js';
+
+// QR code generation tool
+export { generateQRCodeTool } from './qrcode.js';

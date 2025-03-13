@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "npm run build && node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "ts-node --esm src/index.ts",
     "inspect": "fastmcp inspect src/index.ts",
     "cleanup": "bash scripts/cleanup_cursor_logs.sh",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
