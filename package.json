@@ -9,7 +9,10 @@
     "start": "npm run build && node dist/index.js",
     "dev": "ts-node src/index.ts",
     "inspect": "fastmcp inspect src/index.ts",
-    "cleanup": "bash scripts/cleanup_cursor_logs.sh"
+    "cleanup": "bash scripts/cleanup_cursor_logs.sh",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "prepare": "husky install"
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -17,7 +20,13 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.1.0",
     "ts-node": "^10.9.1",
     "typescript": "^5.2.2"
+  },
+  "lint-staged": {
+    "**/*.{ts,tsx,js,jsx,json,md}": "prettier --write"
   }
 }

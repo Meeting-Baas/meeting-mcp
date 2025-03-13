@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.vscode/
+.husky/
+.github/
+*.md
+*.log
+*.min.js 
