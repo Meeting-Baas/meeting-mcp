@@ -63,6 +63,29 @@ setupPingFiltering();
 
 const serverLog = createServerLogger('MCP Server');
 
+// Add global error handlers to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  // Check if this is a connection closed error from the MCP protocol
+  const error = reason as any;
+  if (error && error.code === -32000 && error.message?.includes('Connection closed')) {
+    serverLog(`Connection closed gracefully, ignoring error`);
+  } else {
+    serverLog(`Unhandled Rejection: ${error?.message || String(reason)}`);
+    console.error('[MCP Server] Error details:', reason);
+  }
+});
+
+process.on('uncaughtException', (error) => {
+  // Check if this is a connection closed error from the MCP protocol
+  const err = error as any; // Cast to any to access non-standard properties
+  if (err && err.code === 'ERR_UNHANDLED_ERROR' && err.context?.error?.code === -32000) {
+    serverLog(`Connection closed gracefully, ignoring exception`);
+  } else {
+    serverLog(`Uncaught Exception: ${error?.message || String(error)}`);
+    console.error('[MCP Server] Exception details:', error);
+  }
+});
+
 // Log startup information
 serverLog('========== SERVER STARTUP ==========');
 serverLog(`Server version: ${SERVER_CONFIG.version}`);
