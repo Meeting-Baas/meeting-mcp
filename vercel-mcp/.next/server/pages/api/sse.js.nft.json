@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "files": [
+    "../../webpack-api-runtime.js",
+    "../../chunks/844.js",
+    "../../../../package.json",
+    "../../../../vercel.json"
+  ]
+}

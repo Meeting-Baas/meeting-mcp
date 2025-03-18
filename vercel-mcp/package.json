@@ -1,0 +1,36 @@
+{
+  "name": "meeting-baas-mcp-vercel",
+  "version": "1.0.0",
+  "description": "Meeting BaaS MCP Server for Vercel",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test-client": "node scripts/test-client.mjs http://localhost:3000"
+  },
+  "keywords": [
+    "mcp",
+    "meeting",
+    "vercel",
+    "transcript",
+    "claude"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@8.15.7+sha512.c85cd21b6da10332156b1ca2aa79c0a61ee7ad2eb0453b88ab299289e9e8ca93e6091232b25c07cbf61f6df77128d9c849e5c9ac6e44854dbd211c49f3a67adc",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "content-type": "^1.0.5",
+    "dotenv": "^16.4.5",
+    "next": "^14.2.4",
+    "raw-body": "^3.0.0",
+    "redis": "^4.7.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/react": "19.0.10",
+    "typescript": "^5.4.2"
+  }
+}
