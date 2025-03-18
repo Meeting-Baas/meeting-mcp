@@ -3,7 +3,7 @@
  */
 
 // Environment configuration
-export type Environment = 'gmeetbot' | 'preprod' | 'prod';
+export type Environment = 'gmeetbot' | 'preprod' | 'prod' | 'local';
 
 // Current active environment (default to prod)
 let currentEnvironment: Environment = 'prod';
@@ -11,8 +11,9 @@ let currentEnvironment: Environment = 'prod';
 // API base URLs for different environments
 const API_URLS = {
   gmeetbot: 'https://api.gmeetbot.com',
-  preprod: 'https://api.pre-prod-meetingbot.com',
+  preprod: 'https://api.pre-prod-meetingbaas.com',
   prod: 'https://api.meetingbaas.com',
+  local: 'http://localhost:3001',
 };
 
 // Get current API base URL based on the active environment

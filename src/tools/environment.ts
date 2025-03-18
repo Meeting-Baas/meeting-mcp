@@ -15,8 +15,8 @@ const logger = createServerLogger('Environment Tool');
 // Define the schema for the environment selection tool parameters
 const environmentSelectionSchema = z.object({
   environment: z
-    .enum(['gmeetbot', 'preprod', 'prod'])
-    .describe('The environment to use (gmeetbot, preprod, or prod)'),
+    .enum(['gmeetbot', 'preprod', 'prod', 'local'])
+    .describe('The environment to use (gmeetbot, preprod, prod, or local)'),
 });
 
 // Create the environment selection tool using the helper function
