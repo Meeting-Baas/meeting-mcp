@@ -38,6 +38,7 @@ import {
   // Calendar tools
   oauthGuidanceTool,
   resyncAllCalendarsTool,
+  retranscribeTool,
   scheduleRecordingTool,
   scheduleRecordingWithCredentialsTool,
   // Environment tools
@@ -241,6 +242,7 @@ async function loadClaudeDesktopConfig() {
   registerTool(server, leaveMeetingTool);
   registerTool(server, getMeetingDataTool);
   registerTool(server, getMeetingDataWithCredentialsTool);
+  registerTool(server, retranscribeTool);
 
   // For the rest, use the original method until we refactor them
   server.addTool(getTranscriptTool);

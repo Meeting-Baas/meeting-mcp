@@ -73,7 +73,7 @@
     "/bots/{uuid}/delete_data": {
       "post": {
         "summary": "Delete Data",
-        "description": "Deletes a bot's data including recording, transcription, and logs. Only metadata is retained. Rate limited to 15 requests per 60 seconds.",
+        "description": "Deletes a bot's data including recording, transcription, and logs. Only metadata is retained. Rate limited to 5 requests per minute per API key.",
         "operationId": "delete_data",
         "responses": {
           "200": {
@@ -173,6 +173,16 @@
             "description": "Sort the results by a field in the extra JSON payload.\n\nThis parameter performs in-memory sorting on the `extra` JSON field, similar to a SQL ORDER BY clause. It changes the order of results but not which results are included.\n\nFormat specifications: - Default (ascending): \"field\" - Explicit direction: \"field:asc\" or \"field:desc\"\n\nExamples: - \"customer_id\" - Sort by customer_id (ascending) - \"priority:desc\" - Sort by priority (descending)\n\nNotes: - Applied after all filtering - String comparison is used for sorting - Bots with the field come before bots without it - Can be combined with filter_by_extra",
             "schema": {
               "description": "Sort the results by a field in the extra JSON payload.\n\nThis parameter performs in-memory sorting on the `extra` JSON field, similar to a SQL ORDER BY clause. It changes the order of results but not which results are included.\n\nFormat specifications: - Default (ascending): \"field\" - Explicit direction: \"field:asc\" or \"field:desc\"\n\nExamples: - \"customer_id\" - Sort by customer_id (ascending) - \"priority:desc\" - Sort by priority (descending)\n\nNotes: - Applied after all filtering - String comparison is used for sorting - Bots with the field come before bots without it - Can be combined with filter_by_extra",
+              "type": ["string", "null"]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "speaker_name",
+            "description": "NOTE: this is a preview feature and not yet available\n\nFilter bots by speaker name containing this string.\n\nPerforms a case-insensitive partial match on the speakers in the meeting. Useful for finding meetings that included a specific person.\n\nExample: \"John\" would match meetings with speakers like \"John Smith\" or \"John Doe\"",
+            "schema": {
+              "description": "NOTE: this is a preview feature and not yet available\n\nFilter bots by speaker name containing this string.\n\nPerforms a case-insensitive partial match on the speakers in the meeting. Useful for finding meetings that included a specific person.\n\nExample: \"John\" would match meetings with speakers like \"John Smith\" or \"John Doe\"",
               "type": ["string", "null"]
             },
             "style": "form"
@@ -561,12 +571,6 @@
         "in": "header",
         "name": "x-meeting-baas-api-key",
         "description": "API key for authentication"
-      },
-      "LegacyApiKeyAuth": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "x-spoke-api-key",
-        "description": "Legacy API key for authentication (deprecated)"
       }
     },
     "schemas": {
@@ -1191,6 +1195,10 @@
           "sort_by_extra": {
             "description": "Sort the results by a field in the extra JSON payload.\n\nThis parameter performs in-memory sorting on the `extra` JSON field, similar to a SQL ORDER BY clause. It changes the order of results but not which results are included.\n\nFormat specifications: - Default (ascending): \"field\" - Explicit direction: \"field:asc\" or \"field:desc\"\n\nExamples: - \"customer_id\" - Sort by customer_id (ascending) - \"priority:desc\" - Sort by priority (descending)\n\nNotes: - Applied after all filtering - String comparison is used for sorting - Bots with the field come before bots without it - Can be combined with filter_by_extra",
             "type": ["string", "null"]
+          },
+          "speaker_name": {
+            "description": "NOTE: this is a preview feature and not yet available\n\nFilter bots by speaker name containing this string.\n\nPerforms a case-insensitive partial match on the speakers in the meeting. Useful for finding meetings that included a specific person.\n\nExample: \"John\" would match meetings with speakers like \"John Smith\" or \"John Doe\"",
+            "type": ["string", "null"]
           }
         }
       },
@@ -1231,11 +1239,22 @@
       },
       "Metadata": {
         "type": "object",
-        "required": ["bot_data", "duration", "mp4"],
+        "required": ["bot_data", "content_deleted", "duration", "mp4"],
         "properties": {
           "bot_data": { "$ref": "#/components/schemas/BotData" },
-          "duration": { "type": "integer", "format": "int64" },
-          "mp4": { "type": "string" }
+          "content_deleted": {
+            "description": "Indicates whether the recording has been deleted",
+            "type": "boolean"
+          },
+          "duration": {
+            "description": "Duration of the recording in seconds",
+            "type": "integer",
+            "format": "int64"
+          },
+          "mp4": {
+            "description": "URL to access the recording MP4 file. Will be null if content has been deleted.",
+            "type": "string"
+          }
         }
       },
       "OptionalDateTime": { "type": ["string", "null"], "format": "date-time" },
@@ -1321,12 +1340,24 @@
       },
       "RecentBotEntry": {
         "type": "object",
-        "required": ["createdAt", "extra", "id", "meetingUrl", "name"],
+        "required": [
+          "content_deleted",
+          "createdAt",
+          "extra",
+          "id",
+          "meetingUrl",
+          "name",
+          "speakers"
+        ],
         "properties": {
           "accessCount": {
             "description": "Number of times this bot data has been accessed (if tracked)",
             "type": ["integer", "null"],
             "format": "int32"
+          },
+          "content_deleted": {
+            "description": "Indicates whether the recording content has been deleted",
+            "type": "boolean"
           },
           "createdAt": { "description": "Creation timestamp of the bot", "type": "string" },
           "duration": {
@@ -1356,6 +1387,11 @@
           "sessionId": {
             "description": "Session ID if the bot is active",
             "type": ["string", "null"]
+          },
+          "speakers": {
+            "description": "List of unique speaker names from the bot's transcripts",
+            "type": "array",
+            "items": { "type": "string" }
           }
         }
       },

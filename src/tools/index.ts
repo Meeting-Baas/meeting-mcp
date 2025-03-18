@@ -18,6 +18,7 @@ export * from './links.js';
 // Bot management tools
 export * from './deleteData.js';
 export * from './listBots.js';
+export { retranscribeTool } from './retranscribe.js';
 
 // Environment tools
 export * from './environment.js';
