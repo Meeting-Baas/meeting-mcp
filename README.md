@@ -4,6 +4,46 @@
 
 A Model Context Protocol (MCP) server that provides tools for managing meeting data, including transcripts, recordings, calendar events, and search functionality.
 
+## QUICK START: Claude Desktop Integration
+
+To use Meeting BaaS with Claude Desktop:
+
+1. Edit the Claude Desktop configuration file:
+   ```bash
+   vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
+   ```
+
+2. Add the Meeting BaaS configuration:
+   ```json
+   "meetingbaas": {
+     "command": "/bin/bash",
+     "args": [
+       "-c",
+       "cd /path/to/meeting-mcp && (npm run build 1>&2) && export MCP_FROM_CLAUDE=true && node dist/index.js"
+     ],
+     "headers": {
+       "x-api-key": "YOUR_API_KEY"
+     }
+   }
+   ```
+
+3. For calendar integration, you can add the `calendarOAuth` section to your `botConfig`:
+   ```json
+   "botConfig": {
+     "calendarOAuth": {
+       "platform": "Google",  // or "Microsoft"
+       "clientId": "YOUR_OAUTH_CLIENT_ID",
+       "clientSecret": "YOUR_OAUTH_CLIENT_SECRET", 
+       "refreshToken": "YOUR_REFRESH_TOKEN",
+       "rawCalendarId": "primary@gmail.com"  // Optional
+     }
+   }
+   ```
+
+4. Save the file and restart Claude Desktop.
+
+> **Note:** Calendar integration is optional. Meeting BaaS can be used without connecting a calendar by simply omitting the `calendarOAuth` section.
+
 ## Overview
 
 This project implements a Model Context Protocol (MCP) server that allows AI assistants like Claude and Cursor to access and manipulate meeting data. It exposes a set of tools and resources that can be used to:
@@ -313,36 +353,6 @@ The server exposes several tools through the MCP protocol:
    "Force a resync of all my connected calendars"
    ```
 
-### Simplified Calendar Integration
-
-For a simpler approach to calendar integration, you can directly configure your calendar OAuth credentials in the Claude Desktop configuration file:
-
-1. Edit the configuration file:
-   ```bash
-   vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
-   ```
-
-2. Add the `calendarOAuth` section to your botConfig:
-   ```json
-   "botConfig": {
-     // other bot configuration...
-     
-     "calendarOAuth": {
-       "platform": "Google",  // or "Microsoft"
-       "clientId": "YOUR_OAUTH_CLIENT_ID",
-       "clientSecret": "YOUR_OAUTH_CLIENT_SECRET", 
-       "refreshToken": "YOUR_REFRESH_TOKEN",
-       "rawCalendarId": "primary@gmail.com"  // Optional
-     }
-   }
-   ```
-
-3. Save the file and restart Claude Desktop - your calendar will be automatically integrated.
-
-This approach eliminates the need to manually call the OAuth setup tools, making calendar integration a one-time configuration task.
-
-> **Note:** Calendar integration is completely optional. You can use Meeting BaaS without connecting a calendar by simply omitting the `calendarOAuth` section from your configuration. Calendar integration enhances the experience by providing access to your upcoming meetings and enabling automatic recording of calendar events.
-
 ### Analyzing Meeting Content
 
 1. Get the full transcript of a meeting:
@@ -455,123 +465,6 @@ Key configuration options:
 - `API_BASE_URL`: The base URL for the Meeting BaaS API
 - `DEFAULT_API_KEY`: Default API key for testing
 
-## Integration with Claude Desktop
-
-To integrate with Claude Desktop:
-
-1. Edit the Claude Desktop configuration file:
-
-   ```bash
-   vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
-   ```
-
-2. Add the Meeting BaaS MCP server configuration:
-
-   ```json
-   {
-     "mcpServers": {
-       "meetingbaas": {
-         "command": "/bin/bash",
-         "args": [
-           "-c",
-           "cd /path/to/meeting-mcp && (npm run build 1>&2) && MCP_FROM_CLAUDE=true node dist/index.js"
-         ],
-         "headers": {
-           "x-api-key": "YOUR_API_KEY_FOR_MEETING_BAAS"
-         },
-         "botConfig": {
-           "name": "Meeting Assistant",
-           "image": "https://meetingbaas.com/static/972043b7d604bca0d4b0048c7dd67ad2/fc752/previewFeatures.avif",
-           "entryMessage": "Hello, I'm a bot from Meeting Baas. I'll be taking notes for this meeting.",
-           "deduplicationKey": "unique_key_to_override_restriction",
-           "nooneJoinedTimeout": 600,
-           "waitingRoomTimeout": 600,
-           "speechToTextProvider": "Gladia",
-           "speechToTextApiKey": "YOUR_SPEECH_TO_TEXT_API_KEY",
-           "extra": {
-             "meetingType": "sales",
-             "summaryPrompt": "Focus on action items and decision points",
-             "searchKeywords": ["budget", "timeline", "deliverables"],
-             "timeStampHighlights": [
-               {"time": "00:05:23", "note": "Discussion about Q2 sales numbers"},
-               {"time": "00:12:47", "note": "Team disagreement on marketing strategy"}
-             ],
-             "participants": ["John Smith", "Jane Doe", "Bob Johnson"],
-             "project": "Project Phoenix",
-             "department": "Engineering",
-             "priority": "High",
-             "followupDate": "2023-12-15",
-             "tags": ["technical", "planning", "retrospective"]
-           },
-           
-           // Optional: Direct calendar OAuth integration
-           // Add this section only if you want to enable calendar integration
-           "calendarOAuth": {
-             "platform": "Google",  // or "Microsoft"
-             "clientId": "YOUR_OAUTH_CLIENT_ID",
-             "clientSecret": "YOUR_OAUTH_CLIENT_SECRET",
-             "refreshToken": "YOUR_REFRESH_TOKEN",
-             "rawCalendarId": "primary@gmail.com"  // Optional - specific calendar ID
-           }
-         }
-       }
-     }
-   }
-   ```
-
-   **Note:** Replace `/path/to/meeting-mcp` with the path to your local repository and `YOUR_API_KEY` with your actual API key.
-
-   > **Important:** Ensure you're using an API key associated with your corporate email account. All recordings, bot logs, and shared links will be automatically accessible to colleagues with the same email domain for seamless team collaboration.
-
-   > **Note about QR Code API:** The QR Code API uses the same header name (`x-api-key`) as the Meeting BaaS API, but it must be configured separately. For QR Code generation functionality, you should use one of the methods described in the "QR Code API Key Configuration" section below, such as setting an environment variable or including the key directly in the prompt.
-
-3. Restart Claude Desktop.
-
-The configuration explained:
-- `command` specifies the shell to use
-- `args` contains the command line arguments:
-  - `cd` to your project directory
-  - Build the project with error output redirected to stderr
-  - Run the server with the `MCP_FROM_CLAUDE=true` environment variable to indicate it's running from Claude Desktop
-- `headers` contains the API keys for authentication:
-  - `x-api-key`: Your Meeting BaaS API key for accessing the meeting service
-- `botConfig` allows you to customize the bot's appearance and behavior:
-  - `name`: The name displayed for the bot in meetings (default: "Claude Assistant")
-  - `image`: URL to a publicly accessible image to use as the bot's avatar (optional)
-  - `entryMessage`: Message the bot will send when joining a meeting (optional)
-  - `deduplicationKey`: A unique key to override the 5-minute restriction on joining the same meeting (optional)
-  - `nooneJoinedTimeout`: Timeout in seconds for the bot to leave if no participants join (optional)
-  - `waitingRoomTimeout`: Timeout in seconds for the bot to leave if stuck in waiting room (optional)
-  - `speechToTextProvider`: Provider to use for transcription ("Gladia", "Runpod", "Default") (optional)
-  - `speechToTextApiKey`: API key for the speech-to-text provider if required (optional)
-  - `calendarOAuth`: Direct calendar integration with OAuth credentials (optional)
-    - `platform`: "Google" or "Microsoft"
-    - `clientId`: Your OAuth client ID
-    - `clientSecret`: Your OAuth client secret
-    - `refreshToken`: Your OAuth refresh token
-    - `rawCalendarId`: Optional ID of specific calendar to integrate
-  - `extra`: Additional metadata about meetings to enhance AI capabilities (optional)
-    - Example: 
-    ```json
-    {
-      "meetingType": "sales",
-      "summaryPrompt": "Focus on action items and decision points",
-      "searchKeywords": ["budget", "timeline", "deliverables"],
-      "timeStampHighlights": [
-        {"time": "00:05:23", "note": "Discussion about Q2 sales numbers"},
-        {"time": "00:12:47", "note": "Team disagreement on marketing strategy"}
-      ],
-      "participants": ["John Smith", "Jane Doe", "Bob Johnson"],
-      "project": "Project Phoenix",
-      "department": "Engineering",
-      "priority": "High",
-      "followupDate": "2023-12-15",
-      "tags": ["technical", "planning", "retrospective"]
-    }
-    ```
-
-The `extra` field is extremely flexible - you can add any structured metadata that makes sense for your organization and use cases.
-
 ## Integration with Cursor
 
 To integrate with Cursor:
@@ -667,3 +560,5 @@ The QR code generator tool requires an API key from QR Code AI API. There are se
 The tool will check for the API key in the order listed above. If no API key is provided, the default API key will be used if available.
 
 You can obtain an API key by signing up at [QR Code AI API](https://qrcode-ai.com).
+
+
